@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-05-12T00:54:16.884205",
+  "composio_api_ok": false,
+  "connected_accounts": 0,
+  "sources": {
+    "composio_api": false,
+    "gmail": false,
+    "outlook": false,
+    "imap_direct": true,
+    "imap_via_composio": false,
+    "reddit": false,
+    "linkedin": false
+  }
+}
