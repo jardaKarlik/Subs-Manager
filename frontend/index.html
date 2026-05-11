@@ -362,7 +362,11 @@
   /* Screen transitions */
   .screen-enter { animation: fadeIn 200ms ease-out both; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 </style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
 <div class="stage">
@@ -391,23 +395,49 @@
   </div>
 </div>
 
+<!-- Backend integration - MUST load before data files -->
+<script src="app.js"></script>
+
+<!-- Load visualization components FIRST (plain JS, no babel needed) -->
+<script src="ui-components.js"></script>
+
 <script src="d3a11c2f-08d3-4139-b8e1-449faffa02a4.js"></script>
 <script src="3ac60e66-4c32-4c1c-ac8d-71f4eb1878c3.js"></script>
 <script src="c12852e5-4bfe-485d-8409-1eaee26d6c0a.js"></script>
 
+<!-- Load data and helper functions -->
 <script type="text/babel" src="b751b547-0f44-4986-958a-35765ec7e457.js"></script>
 <script type="text/babel" src="6a68ae93-57bc-4f09-a7fa-665e54fa5058.js"></script>
 <script type="text/babel" src="118d8639-f89f-4ec9-ac5d-8a62a498b6e4.js"></script>
 <script type="text/babel" src="1d662015-2905-4797-8bcf-9a0273b6a290.js"></script>
 
-<!-- Backend integration -->
-<script src="app.js"></script>
-
 <script type="text/babel" data-presets="react">
 function DesktopPrototype() {
-  const [layout, setLayout] = React.useState('command'); // command | editorial
+  const [layout, setLayout] = React.useState('command');
   const [stack, setStack] = React.useState([{ screen: 'overview' }]);
+  const [tick, setTick] = React.useState(0);
+  const [loading, setLoading] = React.useState(true);
   const top = stack[stack.length - 1];
+
+  // Check if data loaded
+  React.useEffect(() => {
+    const checkTimer = setInterval(() => {
+      if (window.SERVICES && window.SERVICES.length > 0) {
+        setLoading(false);
+      }
+    }, 100);
+    
+    // Force stop loading after 10s
+    const timeoutTimer = setTimeout(() => {
+      console.log('⏰ 10s timeout - stopping spinner');
+      setLoading(false);
+    }, 10000);
+    
+    return () => {
+      clearInterval(checkTimer);
+      clearTimeout(timeoutTimer);
+    };
+  }, []);
 
   React.useEffect(() => {
     window.__nav = (action, param, extra) => {
@@ -426,6 +456,12 @@ function DesktopPrototype() {
       }
     };
     return () => { delete window.__nav; };
+  }, []);
+
+  // Refresh hook: app.js calls window.refreshApp() after fetching data
+  React.useEffect(() => {
+    window.refreshApp = () => setTick(t => t + 1);
+    return () => { delete window.refreshApp; };
   }, []);
 
   // Wire topbar
@@ -469,7 +505,14 @@ function DesktopPrototype() {
   }, [layout, top]);
 
   let body;
-  if (top.screen === 'overview') {
+  if (loading) {
+    body = (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '16px' }}>
+        <div style={{ width: '40px', height: '40px', border: '4px solid rgba(255,230,0,0.2)', borderTop: '4px solid #ffe600', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+        <div style={{ color: '#8a8a8e', fontSize: '13px', fontFamily: 'JetBrains Mono, monospace' }}>Loading subscriptions...</div>
+      </div>
+    );
+  } else if (top.screen === 'overview') {
     body = layout === 'command' ? <DesktopCommand /> : <DesktopEditorial />;
   } else if (top.screen === 'category') {
     body = <DesktopCategory catId={top.catId} selectedSvcId={top.svcId} />;
@@ -478,7 +521,7 @@ function DesktopPrototype() {
     body = <DesktopCategory catId="ai" />;
   }
 
-  const k = stack.length + ':' + top.screen + ':' + (top.catId || '') + ':' + layout;
+  const k = tick + ':' + stack.length + ':' + top.screen + ':' + (top.catId || '') + ':' + layout;
   return (
     <div key={k} className="screen-enter" style={{ width: '100%', height: '100%' }}>
       {body}

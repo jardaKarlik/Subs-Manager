@@ -1,10 +1,14 @@
 // Modified frontend to connect to FastAPI backend
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8000/api';
 
 // Fetch subscriptions from backend
 async function fetchSubscriptions() {
     try {
+<<<<<<< Updated upstream
         const response = await fetch(`${API_BASE}/api/subscriptions`);
+=======
+        const response = await fetch(`${API_BASE}/subscriptions?page_size=100`);
+>>>>>>> Stashed changes
         if (!response.ok) throw new Error('Failed to fetch subscriptions');
         const data = await response.json();
         return data.items || [];
@@ -109,17 +113,30 @@ function extractPlan(notes) {
 // Transform backend data to frontend format
 function transformSubscriptionData(backendSubs) {
     return backendSubs.map(sub => ({
+<<<<<<< Updated upstream
         id: sub.id.toString(),
+=======
+        id: sub.id || sub.service_name.toLowerCase().replace(/\s+/g, ''),
+>>>>>>> Stashed changes
         name: sub.service_name,
         mono: sub.service_name.substring(0, 2).toUpperCase(),
         color: getServiceColor(sub.category),
         cat: sub.category,
+<<<<<<< Updated upstream
         plan: extractPlan(sub.notes),                                    // ✅ FIX #3: Extract plan
         monthly: calculateMonthly(sub.cost, sub.billing_cycle),          // ✅ FIX #1: Calculate monthly
         billing: (sub.billing_cycle || 'monthly').charAt(0).toUpperCase() + (sub.billing_cycle || 'monthly').slice(1),
         usage: Math.random() * 0.8 + 0.2, // Random usage for demo
         since: sub.start_date ? sub.start_date.substring(0, 7) : '2023-01',  // ✅ FIX #2: Use actual start_date
         status: sub.status || 'active'
+=======
+        plan: sub.notes || (sub.billing_cycle === 'monthly' ? 'Monthly' : sub.billing_cycle === 'yearly' ? 'Annual' : 'Standard'),
+        monthly: parseFloat(sub.cost) || 0,
+        billing: sub.billing_cycle || 'monthly',
+        usage: sub.status === 'active' ? (0.5 + Math.random() * 0.5) : (Math.random() * 0.2), // Active subs: 50-100% usage, idle: 0-20%
+        since: sub.start_date ? sub.start_date.substring(0, 7) : new Date(sub.created_at).toISOString().substring(0, 7),
+        status: sub.status
+>>>>>>> Stashed changes
     }));
 }
 
@@ -141,7 +158,9 @@ function getServiceColor(category) {
 }
 
 // Override the original SERVICES data with backend data
-let SERVICES = [];
+// Note: window.SERVICES is defined in b751b547...js; we mutate it in-place so
+// React components (which read the global SERVICES) pick up the new data.
+
 let STATS = { total_monthly: 0, total_yearly: 0, active_count: 0, idle_count: 0 };
 
 // Initialize app with backend data
@@ -152,7 +171,9 @@ async function initializeApp() {
             getStats()
         ]);
         
-        SERVICES = transformSubscriptionData(subscriptions);
+        // Replace window.SERVICES contents so React sees the new data
+        window.SERVICES.length = 0;
+        window.SERVICES.push(...transformSubscriptionData(subscriptions));
         STATS = stats;
         
         // Trigger React re-render if needed
@@ -160,7 +181,7 @@ async function initializeApp() {
             window.refreshApp();
         }
         
-        console.log('App initialized with backend data:', { SERVICES, STATS });
+        console.log('App initialized with backend data:', { SERVICES: window.SERVICES, STATS });
     } catch (error) {
         console.error('Failed to initialize app:', error);
     }
@@ -191,15 +212,29 @@ function showAddSubscriptionForm() {
                             <option value="productivity">Productivity</option>
                             <option value="gaming">Gaming</option>
                             <option value="security">Security</option>
+                            <option value="other">Other</option>
                         </select>
                     </div>
                     <div style="margin-bottom: 12px;">
-                        <label style="color: #8a8a8e; font-size: 12px; display: block; margin-bottom: 4px;">Monthly Cost</label>
-                        <input type="number" name="monthly_cost" step="0.01" required style="width: 100%; padding: 8px; background: #0a0a0b; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                        <label style="color: #8a8a8e; font-size: 12px; display: block; margin-bottom: 4px;">Cost</label>
+                        <input type="number" name="cost" step="0.01" required style="width: 100%; padding: 8px; background: #0a0a0b; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
                     </div>
                     <div style="margin-bottom: 12px;">
-                        <label style="color: #8a8a8e; font-size: 12px; display: block; margin-bottom: 4px;">Plan Name</label>
-                        <input type="text" name="plan_name" style="width: 100%; padding: 8px; background: #0a0a0b; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                        <label style="color: #8a8a8e; font-size: 12px; display: block; margin-bottom: 4px;">Currency</label>
+                        <select name="currency" style="width: 100%; padding: 8px; background: #0a0a0b; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="CZK">CZK</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="color: #8a8a8e; font-size: 12px; display: block; margin-bottom: 4px;">Billing Cycle</label>
+                        <select name="billing_cycle" style="width: 100%; padding: 8px; background: #0a0a0b; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
                     </div>
                     <div style="margin-bottom: 16px;">
                         <label style="color: #8a8a8e; font-size: 12px; display: block; margin-bottom: 4px;">Status</label>
@@ -222,7 +257,7 @@ function showAddSubscriptionForm() {
         e.preventDefault();
         const formData = new FormData(e.target);
         const subscription = Object.fromEntries(formData.entries());
-        subscription.monthly_cost = parseFloat(subscription.monthly_cost);
+        subscription.cost = parseFloat(subscription.cost);
         
         try {
             await addSubscription(subscription);
@@ -274,9 +309,14 @@ function showAddSubscriptionButton() {
     document.body.appendChild(button);
 }
 
-// Initialize when DOM is loaded
+// Initialize IMMEDIATELY - don't wait for DOM
+(async function() {
+    console.log('🚀 app.js executing now, before React renders');
+    await initializeApp();
+})();
+
+// Add buttons after DOM loads
 document.addEventListener('DOMContentLoaded', () => {
-    initializeApp();
     showParseEmailsButton();
     showAddSubscriptionButton();
 });

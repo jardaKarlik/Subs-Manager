@@ -335,7 +335,7 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
 class ParseEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
     max_results: int = Field(default=1000, ge=1, le=2000)
-    since_days: int = Field(default=365, ge=1, le=730)
+    since_days: int = Field(default=730, ge=1, le=730)
 
 
 class SyncEmailsRequest(BaseModel):
@@ -434,9 +434,12 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             cost=15.99,
             currency="USD",
             billing_cycle="monthly",
+            start_date="2023-01-10",
+            notes="Plan: Standard",
             source="test"
         ),
         SubscriptionCreate(
+<<<<<<< Updated upstream
             service_name="Disney+",
             category="streaming",
             cost=10.99,
@@ -455,13 +458,19 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
         # Music
         SubscriptionCreate(
             service_name="Spotify Premium",
+=======
+            service_name="Spotify",
+>>>>>>> Stashed changes
             category="music",
-            cost=9.99,
+            cost=120.00,
             currency="USD",
-            billing_cycle="monthly",
+            billing_cycle="yearly",
+            start_date="2022-06-15",
+            notes="Plan: Family",
             source="test"
         ),
         SubscriptionCreate(
+<<<<<<< Updated upstream
             service_name="Apple Music",
             category="music",
             cost=10.99,
@@ -472,13 +481,19 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
         # Dev Tools
         SubscriptionCreate(
             service_name="GitHub Pro",
+=======
+            service_name="GitHub",
+>>>>>>> Stashed changes
             category="dev_tools",
             cost=4.00,
             currency="USD",
             billing_cycle="monthly",
+            start_date="2021-11-20",
+            notes="Plan: Pro",
             source="test"
         ),
         SubscriptionCreate(
+<<<<<<< Updated upstream
             service_name="JetBrains All Products",
             category="dev_tools",
             cost=149.00,
@@ -497,10 +512,15 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
         # Design
         SubscriptionCreate(
             service_name="Adobe Creative Cloud",
+=======
+            service_name="Adobe CC",
+>>>>>>> Stashed changes
             category="design",
-            cost=52.99,
+            cost=600.00,
             currency="USD",
-            billing_cycle="monthly",
+            billing_cycle="yearly",
+            start_date="2023-03-05",
+            notes="Plan: All Apps",
             source="test"
         ),
         SubscriptionCreate(
@@ -518,6 +538,8 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             cost=127.45,
             currency="USD",
             billing_cycle="monthly",
+            start_date="2024-01-01",
+            notes="Plan: Pay-as-you-go",
             source="test"
         ),
         SubscriptionCreate(
@@ -659,4 +681,8 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    port = int(os.getenv("API_PORT", "8000"))
+    uvicorn.run("api:app", host="0.0.0.0", port=port, reload=True)

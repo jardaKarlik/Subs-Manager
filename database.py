@@ -7,17 +7,21 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import String, Float, DateTime, select, delete, update
+from sqlalchemy import String, Float, DateTime, select, delete, update, func
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Always use the DB in the subscription_manager folder, regardless of CWD
+_DB_DIR = os.path.dirname(os.path.abspath(__file__))
+_DB_PATH = os.path.join(_DB_DIR, "subscriptions.db")
+
 # Database URL configuration
-# SQLite: sqlite+aiosqlite:///subscriptions.db
+# SQLite: sqlite+aiosqlite:///path/to/subscriptions.db
 # PostgreSQL: postgresql+asyncpg://user:pass@host/dbname
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite+aiosqlite:///subscriptions.db"
+    f"sqlite+aiosqlite:///{_DB_PATH}"
 )
 
 # Create async engine
