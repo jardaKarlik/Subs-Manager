@@ -211,22 +211,36 @@ class EmailClassifier:
         text_lower = text.lower()
 
         # Common plan keywords to look for
+        plan_keywords = [
+            "premium", "pro", "plus", "family", "enterprise", "standard", 
+            "basic", "professional", "max", "ultimate", "personal", "student",
+            "business", "starter", "growth", "team", "teams"
+        ]
+        
+        # Specific patterns
         plan_patterns = [
-            r'plan:\s*([a-z\s]+?)(?:\.|,|\s|$)',
-            r'subscription:\s*([a-z\s]+?)(?:\.|,|\s|$)',
-            r'\b(premium|pro|plus|family|enterprise|standard|basic|professional|max|ultimate)\b',
-            r'version\s*[:=]?\s*([a-z\s]+?)(?:\.|,|\s|$)',
+            r"plan:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"subscription:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"tier:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"version\s*[:=]?\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"([a-z0-9\s]+?)\s+plan\b",
         ]
 
+        # 1. Try keyword-based matching first (more precise for "Spotify Premium")
+        for kw in plan_keywords:
+            if re.search(r"\b" + kw + r"\b", text_lower):
+                return kw.title()
+
+        # 2. Try regex patterns
         for pattern in plan_patterns:
             matches = re.findall(pattern, text_lower, re.IGNORECASE)
             for match in matches:
                 plan = match.strip().title() if isinstance(match, str) else match[0].strip().title()
-                # Filter out common false positives
-                if plan and plan not in ['The', 'Your', 'A', 'An', 'And', 'Or', 'Is']:
+                # Filter out common false positives and long strings
+                if plan and len(plan) < 30 and plan not in ["The", "Your", "A", "An", "And", "Or", "Is", "This", "Of"]:
                     return plan
 
-        return 'Standard'
+        return "Standard"
 
     def classify(self, subject: str, sender: str, body: str) -> Dict:
         """
@@ -547,3 +561,5 @@ def test_classifier():
 
 if __name__ == "__main__":
     test_classifier()
+
+

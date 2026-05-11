@@ -8,6 +8,10 @@ import os
 import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
+from sqlalchemy import func
+
+import email.utils
+
 from email.parser import Parser
 from email.header import decode_header
 
@@ -383,20 +387,26 @@ class EmailFetcher:
                         subscription_id = existing.id
                     else:
                         # Extract start date from email date
-                        try:
-                            from datetime import datetime
-                            email_date = email.get('date', '')
-                            if email_date:
-                                # Parse email date and convert to YYYY-MM-DD format
-                                email_datetime = datetime.fromisoformat(email_date.replace('Z', '+00:00'))
-                                start_date = email_datetime.strftime('%Y-%m-%d')
-                            else:
-                                start_date = datetime.utcnow().strftime('%Y-%m-%d')
-                        except:
-                            start_date = datetime.utcnow().strftime('%Y-%m-%d')
+                        start_date = None
+                        email_date = email.get("date", "")
+                        if email_date:
+                            try:
+                                # Try standard email date parser
+                                email_datetime = email.utils.parsedate_to_datetime(email_date)
+                                start_date = email_datetime.strftime("%Y-%m-%d")
+                            except Exception:
+                                try:
+                                    # Fallback to ISO
+                                    email_datetime = datetime.fromisoformat(email_date.replace("Z", "+00:00"))
+                                    start_date = email_datetime.strftime("%Y-%m-%d")
+                                except Exception:
+                                    pass
+                        
+                        if not start_date:
+                            start_date = datetime.utcnow().strftime("%Y-%m-%d")
 
                         # Extract plan type if available
-                        plan_name = classification.get('plan_name', 'Standard')
+                        plan_name = classification.get("plan_name", "Standard")
 
                         # Create new subscription
                         new_sub = Subscription(
@@ -406,8 +416,8 @@ class EmailFetcher:
                             currency=classification["currency"],
                             billing_cycle=classification["billing_cycle"],
                             status="active",
-                            start_date=start_date,                              # ✅ FIX #2: From email date
-                            notes=f"Plan: {plan_name}",                         # ✅ FIX #3: Store plan type
+                            start_date=start_date,                              # ? FIX #2: From email date
+                            notes=f"Plan: {plan_name}",                         # ? FIX #3: Store plan type
                             source=email["source"],
                         )
                         db.add(new_sub)
@@ -471,3 +481,5 @@ class EmailFetcher:
             else:
                 result.append(part)
         return "".join(result)
+
+
