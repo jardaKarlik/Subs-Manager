@@ -365,10 +365,11 @@ class EmailFetcher:
                 db.add(processed)
 
                 if classification["is_subscription"]:
-                    # Check if subscription already exists for this service
+                    # Check if subscription already exists for this service (case-insensitive)
+                    norm_name = classification["service_name"].strip()
                     result = await db.execute(
                         select(Subscription).where(
-                            Subscription.service_name == classification["service_name"]
+                            func.lower(Subscription.service_name) == norm_name.lower()
                         )
                     )
                     existing = result.scalar_one_or_none()
