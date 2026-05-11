@@ -28,7 +28,7 @@ class EmailFetcher:
 
     # ── Gmail via Composio ─────────────────────────────────────────
 
-    async def fetch_gmail(self, max_results: int = 50, since_days: int = 365) -> List[Dict]:
+    async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Gmail using Composio MCP tools."""
         try:
             from mcp import use_mcp_tool
@@ -129,7 +129,7 @@ class EmailFetcher:
 
     # ── Outlook via Composio ───────────────────────────────────────
 
-    async def fetch_outlook(self, max_results: int = 50, since_days: int = 365) -> List[Dict]:
+    async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Outlook using Composio MCP tools."""
         try:
             from mcp import use_mcp_tool
@@ -189,7 +189,7 @@ class EmailFetcher:
 
     # ── IMAP (Zoner) ───────────────────────────────────────────────
 
-    async def fetch_imap(self, max_results: int = 50, since_days: int = 365) -> List[Dict]:
+    async def fetch_imap(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails via IMAP for third mailbox."""
         import imaplib
         import ssl
@@ -284,7 +284,7 @@ class EmailFetcher:
         self,
         db: AsyncSession,
         sources: List[str] = None,
-        max_results: int = 50,
+        max_results: int = 500,
         since_days: int = 365
     ) -> Dict:
         """

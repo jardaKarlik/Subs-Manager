@@ -334,13 +334,13 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
 
 class ParseEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
-    max_results: int = Field(default=50, ge=1, le=200)
+    max_results: int = Field(default=1000, ge=1, le=2000)
     since_days: int = Field(default=365, ge=1, le=730)
 
 
 class SyncEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
-    max_results: int = Field(default=50, ge=1, le=200)
+    max_results: int = Field(default=100, ge=1, le=1000)
     since_days: int = Field(default=3, ge=1, le=30)
 
 
