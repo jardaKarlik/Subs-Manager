@@ -508,11 +508,11 @@ function DiagnosticDashboard() {
         <div className="fix-card">
           <h3><span className="fix-number">1</span> Port Configuration</h3>
           <div className="fix-description">
-            Backend runs on port 8000 by default. Ensure frontend/app.js uses the correct API_BASE:
+            Backend runs on port 8000. Frontend must connect to the same port.
           </div>
           <div className="code-block">
             <pre>{`// In frontend/app.js line 2
-const API_BASE = 'http://localhost:8001';  // Update to match your backend port`}</pre>
+const API_BASE = 'http://localhost:8000';  // Must match backend port`}</pre>
           </div>
         </div>
 

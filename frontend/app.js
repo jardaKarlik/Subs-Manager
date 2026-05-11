@@ -1,5 +1,5 @@
 // Modified frontend to connect to FastAPI backend
-const API_BASE = 'http://localhost:8001';
+const API_BASE = 'http://localhost:8000';
 
 // Fetch subscriptions from backend
 async function fetchSubscriptions() {
