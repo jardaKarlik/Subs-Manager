@@ -382,6 +382,22 @@ class EmailFetcher:
                         existing.updated_at = datetime.utcnow()
                         subscription_id = existing.id
                     else:
+                        # Extract start date from email date
+                        try:
+                            from datetime import datetime
+                            email_date = email.get('date', '')
+                            if email_date:
+                                # Parse email date and convert to YYYY-MM-DD format
+                                email_datetime = datetime.fromisoformat(email_date.replace('Z', '+00:00'))
+                                start_date = email_datetime.strftime('%Y-%m-%d')
+                            else:
+                                start_date = datetime.utcnow().strftime('%Y-%m-%d')
+                        except:
+                            start_date = datetime.utcnow().strftime('%Y-%m-%d')
+
+                        # Extract plan type if available
+                        plan_name = classification.get('plan_name', 'Standard')
+
                         # Create new subscription
                         new_sub = Subscription(
                             service_name=classification["service_name"],
@@ -390,6 +406,8 @@ class EmailFetcher:
                             currency=classification["currency"],
                             billing_cycle=classification["billing_cycle"],
                             status="active",
+                            start_date=start_date,                              # ✅ FIX #2: From email date
+                            notes=f"Plan: {plan_name}",                         # ✅ FIX #3: Store plan type
                             source=email["source"],
                         )
                         db.add(new_sub)

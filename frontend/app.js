@@ -90,6 +90,22 @@ async function getStats() {
     }
 }
 
+// Calculate monthly cost accounting for billing cycle
+function calculateMonthly(cost, billingCycle) {
+    const cycle = (billingCycle || 'monthly').toLowerCase();
+    if (cycle === 'yearly') {
+        return cost / 12;  // Convert yearly to monthly
+    }
+    return cost || 0;
+}
+
+// Extract plan name from notes field
+function extractPlan(notes) {
+    if (!notes) return 'Standard';
+    const match = notes.match(/Plan:\s*([^\n,]+)/);
+    return match ? match[1].trim() : 'Standard';
+}
+
 // Transform backend data to frontend format
 function transformSubscriptionData(backendSubs) {
     return backendSubs.map(sub => ({
@@ -98,11 +114,11 @@ function transformSubscriptionData(backendSubs) {
         mono: sub.service_name.substring(0, 2).toUpperCase(),
         color: getServiceColor(sub.category),
         cat: sub.category,
-        plan: 'Standard',
-        monthly: parseFloat(sub.cost) || 0,
+        plan: extractPlan(sub.notes),                                    // ✅ FIX #3: Extract plan
+        monthly: calculateMonthly(sub.cost, sub.billing_cycle),          // ✅ FIX #1: Calculate monthly
         billing: (sub.billing_cycle || 'monthly').charAt(0).toUpperCase() + (sub.billing_cycle || 'monthly').slice(1),
         usage: Math.random() * 0.8 + 0.2, // Random usage for demo
-        since: sub.start_date || '2023-01',
+        since: sub.start_date ? sub.start_date.substring(0, 7) : '2023-01',  // ✅ FIX #2: Use actual start_date
         status: sub.status || 'active'
     }));
 }
