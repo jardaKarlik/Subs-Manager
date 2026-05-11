@@ -203,11 +203,36 @@ class EmailClassifier:
             'negative': re.compile(r'\b(' + '|'.join(NEGATIVE_KEYWORDS) + r')\b', re.IGNORECASE),
         }
 
+    def extract_plan_name(self, text: str, service_name: str) -> str:
+        """
+        Extract plan name from email body.
+        Examples: "Spotify Premium", "GitHub Pro", "Adobe Creative Cloud"
+        """
+        text_lower = text.lower()
+
+        # Common plan keywords to look for
+        plan_patterns = [
+            r'plan:\s*([a-z\s]+?)(?:\.|,|\s|$)',
+            r'subscription:\s*([a-z\s]+?)(?:\.|,|\s|$)',
+            r'\b(premium|pro|plus|family|enterprise|standard|basic|professional|max|ultimate)\b',
+            r'version\s*[:=]?\s*([a-z\s]+?)(?:\.|,|\s|$)',
+        ]
+
+        for pattern in plan_patterns:
+            matches = re.findall(pattern, text_lower, re.IGNORECASE)
+            for match in matches:
+                plan = match.strip().title() if isinstance(match, str) else match[0].strip().title()
+                # Filter out common false positives
+                if plan and plan not in ['The', 'Your', 'A', 'An', 'And', 'Or', 'Is']:
+                    return plan
+
+        return 'Standard'
+
     def classify(self, subject: str, sender: str, body: str) -> Dict:
         """
         Classify an email and return structured result with confidence.
         Returns dict with: is_subscription, confidence, service_name, category,
-                          cost, currency, billing_cycle, is_free, source_type
+                          cost, currency, billing_cycle, is_free, source_type, plan_name
         """
         text = f"{subject} {body}"
         text_lower = text.lower()
@@ -306,6 +331,9 @@ class EmailClassifier:
         # Detect billing cycle
         billing_cycle = self._detect_billing_cycle(text)
 
+        # Extract plan name from email body ✅ FIX #3
+        plan_name = self.extract_plan_name(text, service_name or 'Unknown')
+
         # Determine source type
         if is_free:
             source_type = 'free_active'
@@ -322,6 +350,7 @@ class EmailClassifier:
             'category': category,
             'cost': amount,
             'currency': currency,
+            'plan_name': plan_name,
             'billing_cycle': billing_cycle,
             'source_type': source_type,
             'payment_processor': payment_proc,

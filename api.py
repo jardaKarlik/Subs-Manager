@@ -427,6 +427,7 @@ async def get_events(
 async def add_test_data(db: AsyncSession = Depends(get_db)):
     """Add test subscription data for demonstration."""
     test_data = [
+        # Streaming
         SubscriptionCreate(
             service_name="Netflix",
             category="streaming",
@@ -436,6 +437,23 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             source="test"
         ),
         SubscriptionCreate(
+            service_name="Disney+",
+            category="streaming",
+            cost=10.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Hulu",
+            category="streaming",
+            cost=7.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Music
+        SubscriptionCreate(
             service_name="Spotify Premium",
             category="music",
             cost=9.99,
@@ -443,6 +461,15 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             billing_cycle="monthly",
             source="test"
         ),
+        SubscriptionCreate(
+            service_name="Apple Music",
+            category="music",
+            cost=10.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Dev Tools
         SubscriptionCreate(
             service_name="GitHub Pro",
             category="dev_tools",
@@ -452,6 +479,23 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             source="test"
         ),
         SubscriptionCreate(
+            service_name="JetBrains All Products",
+            category="dev_tools",
+            cost=149.00,
+            currency="USD",
+            billing_cycle="yearly",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Vercel Pro",
+            category="dev_tools",
+            cost=20.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Design
+        SubscriptionCreate(
             service_name="Adobe Creative Cloud",
             category="design",
             cost=52.99,
@@ -460,6 +504,15 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             source="test"
         ),
         SubscriptionCreate(
+            service_name="Figma Professional",
+            category="design",
+            cost=12.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Cloud
+        SubscriptionCreate(
             service_name="AWS",
             category="cloud",
             cost=127.45,
@@ -467,16 +520,58 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             billing_cycle="monthly",
             source="test"
         ),
+        SubscriptionCreate(
+            service_name="Google Cloud Platform",
+            category="cloud",
+            cost=89.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # AI
+        SubscriptionCreate(
+            service_name="ChatGPT Plus",
+            category="ai",
+            cost=20.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Anthropic Claude API",
+            category="ai",
+            cost=0.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Productivity
+        SubscriptionCreate(
+            service_name="Notion Personal",
+            category="productivity",
+            cost=10.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Slack Pro",
+            category="productivity",
+            cost=8.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
     ]
-    
+
     count = 0
     for sub_data in test_data:
         sub = Subscription(**sub_data.model_dump())
         db.add(sub)
         count += 1
-    
+
     await db.commit()
-    
+
     return {
         "success": True,
         "message": f"Added {count} test subscriptions",

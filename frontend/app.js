@@ -4,9 +4,10 @@ const API_BASE = 'http://localhost:8000';
 // Fetch subscriptions from backend
 async function fetchSubscriptions() {
     try {
-        const response = await fetch(`${API_BASE}/subscriptions`);
+        const response = await fetch(`${API_BASE}/api/subscriptions`);
         if (!response.ok) throw new Error('Failed to fetch subscriptions');
-        return await response.json();
+        const data = await response.json();
+        return data.items || [];
     } catch (error) {
         console.error('Error fetching subscriptions:', error);
         return [];
@@ -16,7 +17,7 @@ async function fetchSubscriptions() {
 // Add new subscription
 async function addSubscription(subscription) {
     try {
-        const response = await fetch(`${API_BASE}/subscriptions`, {
+        const response = await fetch(`${API_BASE}/api/subscriptions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -34,7 +35,7 @@ async function addSubscription(subscription) {
 // Update subscription
 async function updateSubscription(id, subscription) {
     try {
-        const response = await fetch(`${API_BASE}/subscriptions/${id}`, {
+        const response = await fetch(`${API_BASE}/api/subscriptions/${id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -52,7 +53,7 @@ async function updateSubscription(id, subscription) {
 // Delete subscription
 async function deleteSubscription(id) {
     try {
-        const response = await fetch(`${API_BASE}/subscriptions/${id}`, {
+        const response = await fetch(`${API_BASE}/api/subscriptions/${id}`, {
             method: 'DELETE'
         });
         if (!response.ok) throw new Error('Failed to delete subscription');
@@ -66,7 +67,7 @@ async function deleteSubscription(id) {
 // Trigger email parsing
 async function parseEmails() {
     try {
-        const response = await fetch(`${API_BASE}/parse-emails`, {
+        const response = await fetch(`${API_BASE}/api/parse-emails`, {
             method: 'POST'
         });
         if (!response.ok) throw new Error('Failed to parse emails');
@@ -80,29 +81,45 @@ async function parseEmails() {
 // Get statistics
 async function getStats() {
     try {
-        const response = await fetch(`${API_BASE}/stats`);
+        const response = await fetch(`${API_BASE}/api/stats`);
         if (!response.ok) throw new Error('Failed to fetch stats');
         return await response.json();
     } catch (error) {
         console.error('Error fetching stats:', error);
-        return { total_monthly: 0, total_yearly: 0, active_count: 0, idle_count: 0 };
+        return { total_monthly_cost: 0, total_yearly_cost: 0, total_subscriptions: 0, by_category: {} };
     }
+}
+
+// Calculate monthly cost accounting for billing cycle
+function calculateMonthly(cost, billingCycle) {
+    const cycle = (billingCycle || 'monthly').toLowerCase();
+    if (cycle === 'yearly') {
+        return cost / 12;  // Convert yearly to monthly
+    }
+    return cost || 0;
+}
+
+// Extract plan name from notes field
+function extractPlan(notes) {
+    if (!notes) return 'Standard';
+    const match = notes.match(/Plan:\s*([^\n,]+)/);
+    return match ? match[1].trim() : 'Standard';
 }
 
 // Transform backend data to frontend format
 function transformSubscriptionData(backendSubs) {
     return backendSubs.map(sub => ({
-        id: sub.service_name.toLowerCase().replace(/\s+/g, ''),
+        id: sub.id.toString(),
         name: sub.service_name,
-        mono: sub.service_name.substring(0, 2).toLowerCase(),
+        mono: sub.service_name.substring(0, 2).toUpperCase(),
         color: getServiceColor(sub.category),
         cat: sub.category,
-        plan: sub.plan_name || 'Standard',
-        monthly: parseFloat(sub.monthly_cost) || 0,
-        billing: sub.billing_cycle || 'Monthly',
+        plan: extractPlan(sub.notes),                                    // ✅ FIX #3: Extract plan
+        monthly: calculateMonthly(sub.cost, sub.billing_cycle),          // ✅ FIX #1: Calculate monthly
+        billing: (sub.billing_cycle || 'monthly').charAt(0).toUpperCase() + (sub.billing_cycle || 'monthly').slice(1),
         usage: Math.random() * 0.8 + 0.2, // Random usage for demo
-        since: sub.start_date ? sub.start_date.substring(0, 7) : '2023-01',
-        status: sub.status
+        since: sub.start_date ? sub.start_date.substring(0, 7) : '2023-01',  // ✅ FIX #2: Use actual start_date
+        status: sub.status || 'active'
     }));
 }
 
