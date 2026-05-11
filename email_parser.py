@@ -36,6 +36,7 @@ KNOWN_PROVIDERS = {
     'jetbrains': ('JetBrains', 'dev_tools'),
     'gitlab': ('GitLab', 'dev_tools'),
     'postman': ('Postman', 'dev_tools'),
+    'composio': ('Composio', 'dev_tools'),
     # AI
     'openai': ('OpenAI', 'ai'),
     'anthropic': ('Anthropic', 'ai'),
