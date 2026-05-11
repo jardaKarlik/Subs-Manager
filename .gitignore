@@ -1,0 +1,40 @@
+# Environment
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# Alembic (keep env.py and versions)
+alembic/versions/*.py
+!alembic/versions/.gitkeep
+
+# Memory files (auto-generated)
+memory/episodic/**/*.json
+memory/semantic-*.json
