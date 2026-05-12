@@ -439,8 +439,7 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             source="test"
         ),
         SubscriptionCreate(
-<<<<<<< Updated upstream
-            service_name="Disney+",
+service_name="Disney+",
             category="streaming",
             cost=10.99,
             currency="USD",
@@ -458,9 +457,6 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
         # Music
         SubscriptionCreate(
             service_name="Spotify Premium",
-=======
-            service_name="Spotify",
->>>>>>> Stashed changes
             category="music",
             cost=120.00,
             currency="USD",
@@ -470,8 +466,7 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             source="test"
         ),
         SubscriptionCreate(
-<<<<<<< Updated upstream
-            service_name="Apple Music",
+service_name="Apple Music",
             category="music",
             cost=10.99,
             currency="USD",
@@ -481,9 +476,6 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
         # Dev Tools
         SubscriptionCreate(
             service_name="GitHub Pro",
-=======
-            service_name="GitHub",
->>>>>>> Stashed changes
             category="dev_tools",
             cost=4.00,
             currency="USD",
@@ -493,8 +485,7 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
             source="test"
         ),
         SubscriptionCreate(
-<<<<<<< Updated upstream
-            service_name="JetBrains All Products",
+service_name="JetBrains All Products",
             category="dev_tools",
             cost=149.00,
             currency="USD",
@@ -512,9 +503,6 @@ async def add_test_data(db: AsyncSession = Depends(get_db)):
         # Design
         SubscriptionCreate(
             service_name="Adobe Creative Cloud",
-=======
-            service_name="Adobe CC",
->>>>>>> Stashed changes
             category="design",
             cost=600.00,
             currency="USD",

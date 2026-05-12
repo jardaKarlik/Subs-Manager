@@ -4,11 +4,7 @@ const API_BASE = 'http://localhost:8000/api';
 // Fetch subscriptions from backend
 async function fetchSubscriptions() {
     try {
-<<<<<<< Updated upstream
-        const response = await fetch(`${API_BASE}/api/subscriptions`);
-=======
-        const response = await fetch(`${API_BASE}/subscriptions?page_size=100`);
->>>>>>> Stashed changes
+const response = await fetch(`${API_BASE}/subscriptions?page_size=100`);
         if (!response.ok) throw new Error('Failed to fetch subscriptions');
         const data = await response.json();
         return data.items || [];
@@ -113,30 +109,17 @@ function extractPlan(notes) {
 // Transform backend data to frontend format
 function transformSubscriptionData(backendSubs) {
     return backendSubs.map(sub => ({
-<<<<<<< Updated upstream
-        id: sub.id.toString(),
-=======
-        id: sub.id || sub.service_name.toLowerCase().replace(/\s+/g, ''),
->>>>>>> Stashed changes
+id: sub.id || sub.service_name.toLowerCase().replace(/\s+/g, ''),
         name: sub.service_name,
         mono: sub.service_name.substring(0, 2).toUpperCase(),
         color: getServiceColor(sub.category),
         cat: sub.category,
-<<<<<<< Updated upstream
-        plan: extractPlan(sub.notes),                                    // ✅ FIX #3: Extract plan
-        monthly: calculateMonthly(sub.cost, sub.billing_cycle),          // ✅ FIX #1: Calculate monthly
-        billing: (sub.billing_cycle || 'monthly').charAt(0).toUpperCase() + (sub.billing_cycle || 'monthly').slice(1),
-        usage: Math.random() * 0.8 + 0.2, // Random usage for demo
-        since: sub.start_date ? sub.start_date.substring(0, 7) : '2023-01',  // ✅ FIX #2: Use actual start_date
-        status: sub.status || 'active'
-=======
-        plan: sub.notes || (sub.billing_cycle === 'monthly' ? 'Monthly' : sub.billing_cycle === 'yearly' ? 'Annual' : 'Standard'),
+plan: sub.notes || (sub.billing_cycle === 'monthly' ? 'Monthly' : sub.billing_cycle === 'yearly' ? 'Annual' : 'Standard'),
         monthly: parseFloat(sub.cost) || 0,
         billing: sub.billing_cycle || 'monthly',
-        usage: sub.status === 'active' ? (0.5 + Math.random() * 0.5) : (Math.random() * 0.2), // Active subs: 50-100% usage, idle: 0-20%
+        usage: sub.status === 'active' ? (0.5 + Math.random() * 0.5) : (Math.random() * 0.2),
         since: sub.start_date ? sub.start_date.substring(0, 7) : new Date(sub.created_at).toISOString().substring(0, 7),
         status: sub.status
->>>>>>> Stashed changes
     }));
 }
 
