@@ -1,0 +1,28 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Subs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+<header>
+<div class="brand"><div class="brand-icon">$</div><h1>subs</h1></div>
+<div class="actions">
+<button class="btn-secondary" onclick="sync()">↻ Sync</button>
+<button class="btn-primary" onclick="add()">+ Add</button>
+</div>
+</header>
+<div class="stats">
+<div class="stat"><div class="stat-label">Monthly</div><div class="stat-value" id="monthly">$0</div></div>
+<div class="stat"><div class="stat-label">Yearly</div><div class="stat-value" id="yearly">$0</div></div>
+<div class="stat"><div class="stat-label">Active</div><div class="stat-value" id="active">0</div></div>
+<div class="stat"><div class="stat-label">Total</div><div class="stat-value" id="total">0</div></div>
+</div>
+<div class="subscriptions" id="subs"><div class="loading"><div class="spinner"></div><div>Loading...</div></div></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
