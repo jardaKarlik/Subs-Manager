@@ -239,12 +239,12 @@ class EmailFetcher:
                 print(f"Outlook [v2]: account={outlook_account}, filter='{filter_str}', max_results={max_results}")
 
                 result = composio_client.tools.execute(
-                    slug="OUTLOOK_LIST_MESSAGES",
+                    slug="OUTLOOK_QUERY_EMAILS",
                     arguments={
                         "user_id": user_email,
                         "select": select_fields,
-                        "filter": filter_str,
-                        "limit": max_results,
+                        "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}",
+                        "top": max_results,
                     },
                     connected_account_id=outlook_account,
                     user_id=os.getenv("COMPOSIO_USER_ID", "default"),
@@ -628,6 +628,11 @@ class EmailFetcher:
         return results
 
     # ── Helpers ────────────────────────────────────────────────────
+
+    def _format_outlook_date(self, days: int) -> str:
+        """Format date for Outlook OData filter (ISO 8601)."""
+        date = datetime.now() - timedelta(days=days)
+        return date.strftime("%Y-%m-%dT00:00:00Z")
 
     def _format_gmail_date(self, days: int) -> str:
         """Format date for Gmail search query (YYYY/MM/DD)."""
