@@ -33,7 +33,7 @@ class EmailFetcher:
     # ── Gmail via Composio ─────────────────────────────────────────
 
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Gmail using Composio SDK v3 API."""
+        """Fetch emails from Gmail using Composio SDK."""
         try:
             from composio import Composio, Action
         except ImportError:
@@ -42,14 +42,18 @@ class EmailFetcher:
 
         emails = []
         try:
-            composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
+            api_key = os.getenv("COMPOSIO_API_KEY")
 
-            # Fetch emails using Composio actions.execute()
-            # Try without specifying connected_account first
+            if not api_key:
+                print("Gmail: Missing COMPOSIO_API_KEY")
+                return []
+
+            composio = Composio(api_key=api_key)
+
             query = f"after:{self._format_gmail_date(since_days)}"
+            print(f"Gmail: Fetching emails with max_results={max_results}, query={query}")
 
-            print(f"Gmail: Attempting to fetch with max_results={max_results}, query={query}")
-
+            # Execute fetch_emails action directly
             result = composio.actions.execute(
                 action=Action.GMAIL_FETCH_EMAILS,
                 params={
@@ -58,23 +62,20 @@ class EmailFetcher:
                 }
             )
 
-            print(f"Gmail: Raw result: {result}")
+            print(f"Gmail: Raw result - successful={result.get('successful')}, status={result.get('status')}")
 
-            messages = result.get("data", {}).get("messages", [])
-            print(f"Gmail: Found {len(messages)} messages")
+            # Parse response - check if successful
+            if result.get("successful") or result.get("status") == "success":
+                messages = result.get("data", {}).get("messages", [])
+                print(f"Gmail: Found {len(messages)} messages")
 
-            for msg in messages:
-                message_id = msg.get("id")
-                # Fetch full message
-                detail = composio.actions.execute(
-                    action=Action.GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID,
-                    params={"message_id": message_id},
-                    connected_account=gmail_account.get("id")
-                )
-
-                email_data = self._parse_gmail_message(detail.get("data", {}), message_id)
-                if email_data:
-                    emails.append(email_data)
+                for msg in messages:
+                    email_data = self._parse_gmail_message_composio(msg)
+                    if email_data:
+                        emails.append(email_data)
+            else:
+                error_msg = result.get("error") or result.get("message", "Unknown error")
+                print(f"Gmail: Request failed - {error_msg}")
 
         except Exception as e:
             import traceback
@@ -83,8 +84,33 @@ class EmailFetcher:
 
         return emails
 
+    def _parse_gmail_message_composio(self, msg: Dict) -> Optional[Dict]:
+        """Parse Composio Gmail response into standard email dict."""
+        if not msg:
+            return None
+
+        # Extract message ID and preview body from Composio response
+        message_id = msg.get("messageId", "")
+        subject = msg.get("subject", "")
+        sender = msg.get("sender", "")
+        timestamp = msg.get("messageTimestamp", "")
+
+        # Body can be in preview.body
+        preview = msg.get("preview", {})
+        body = preview.get("body", "") if isinstance(preview, dict) else ""
+
+        return {
+            "message_id": message_id,
+            "source": "gmail",
+            "subject": subject,
+            "sender": sender,
+            "date": timestamp,
+            "body": body,
+            "raw": msg
+        }
+
     def _parse_gmail_message(self, detail: Dict, message_id: str) -> Optional[Dict]:
-        """Parse Gmail API response into standard email dict."""
+        """Parse Gmail API response into standard email dict. [DEPRECATED - use _parse_gmail_message_composio]"""
         data = detail.get("data", {})
         if not data:
             return None
@@ -134,7 +160,7 @@ class EmailFetcher:
     # ── Outlook via Composio ───────────────────────────────────────
 
     async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Outlook using Composio SDK v3 API."""
+        """Fetch emails from Outlook using Composio SDK."""
         try:
             from composio import Composio, Action
         except ImportError:
@@ -143,15 +169,18 @@ class EmailFetcher:
 
         emails = []
         try:
-            composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
+            api_key = os.getenv("COMPOSIO_API_KEY")
 
-            # Format filter for Outlook
+            if not api_key:
+                print("Outlook: Missing COMPOSIO_API_KEY")
+                return []
+
+            composio = Composio(api_key=api_key)
+
             filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
+            print(f"Outlook: Fetching emails with limit={max_results}")
 
-            print(f"Outlook: Attempting to fetch with limit={max_results}, filter={filter_str}")
-
-            # Fetch emails using Composio actions.execute()
-            # Try without specifying connected_account first
+            # Execute outlook query_emails action directly
             result = composio.actions.execute(
                 action=Action.OUTLOOK_QUERY_EMAILS,
                 params={
@@ -160,15 +189,21 @@ class EmailFetcher:
                 }
             )
 
-            print(f"Outlook: Raw result: {result}")
+            print(f"Outlook: Raw result - successful={result.get('successful')}, status={result.get('status')}")
 
-            messages = result.get("data", {}).get("value", [])
-            print(f"Outlook: Found {len(messages)} messages")
+            # Parse response - check if successful
+            if result.get("successful") or result.get("status") == "success":
+                # Outlook returns messages in 'data.value' (not 'data.messages')
+                messages = result.get("data", {}).get("value", [])
+                print(f"Outlook: Found {len(messages)} messages")
 
-            for msg in messages:
-                email_data = self._parse_outlook_message(msg)
-                if email_data:
-                    emails.append(email_data)
+                for msg in messages:
+                    email_data = self._parse_outlook_message_composio(msg)
+                    if email_data:
+                        emails.append(email_data)
+            else:
+                error_msg = result.get("error") or result.get("message", "Unknown error")
+                print(f"Outlook: Request failed - {error_msg}")
 
         except Exception as e:
             import traceback
@@ -177,8 +212,41 @@ class EmailFetcher:
 
         return emails
 
+    def _parse_outlook_message_composio(self, msg: Dict) -> Optional[Dict]:
+        """Parse Composio Outlook response into standard email dict."""
+        if not msg:
+            return None
+
+        # Extract fields from Composio Outlook response
+        message_id = msg.get("id", "")
+        subject = msg.get("subject", "")
+
+        # Sender can be in 'from' field (dict with emailAddress)
+        from_field = msg.get("from", {})
+        if isinstance(from_field, dict):
+            sender = from_field.get("emailAddress", {}).get("address", "")
+        else:
+            sender = str(from_field)
+
+        # Body parsing
+        body_text = msg.get("body", {}).get("content", "")
+        if msg.get("body", {}).get("contentType") == "html":
+            body_text = self._strip_html(body_text)
+
+        timestamp = msg.get("receivedDateTime", "")
+
+        return {
+            "message_id": message_id,
+            "source": "outlook",
+            "subject": subject,
+            "sender": sender,
+            "date": timestamp,
+            "body": body_text,
+            "raw": msg
+        }
+
     def _parse_outlook_message(self, msg: Dict) -> Optional[Dict]:
-        """Parse Outlook API response into standard email dict."""
+        """Parse Outlook API response into standard email dict. [DEPRECATED - use _parse_outlook_message_composio]"""
         if not msg:
             return None
 
