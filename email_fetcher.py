@@ -44,48 +44,21 @@ class EmailFetcher:
         try:
             composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
-            # Get connected accounts for Gmail
-            try:
-                connected_accounts = composio.connected_accounts.get()
-                print(f"Gmail: Found {len(connected_accounts)} connected accounts")
-                print(f"DEBUG: Raw accounts: {connected_accounts}")
-            except Exception as e:
-                print(f"Gmail: Error getting connected accounts: {e}")
-                return []
-
-            if not connected_accounts:
-                print("Gmail: No connected accounts found")
-                return []
-
-            # Get Gmail connected account
-            gmail_account = None
-            for i, account in enumerate(connected_accounts):
-                print(f"DEBUG: Account {i}: {account}")
-                account_dict = account if isinstance(account, dict) else account.__dict__
-                print(f"DEBUG: Account {i} dict: {account_dict}")
-                if (isinstance(account, dict) and (account.get("appId") == "gmail" or account.get("integration") == "gmail")) or \
-                   (hasattr(account, 'appId') and account.appId == "gmail") or \
-                   (hasattr(account, 'integration') and account.integration == "gmail"):
-                    gmail_account = account
-                    print(f"DEBUG: Found Gmail account: {gmail_account}")
-                    break
-
-            if not gmail_account:
-                print("Gmail: No Gmail connected account found")
-                print(f"DEBUG: Available accounts: {[str(a) for a in connected_accounts]}")
-                return []
-
             # Fetch emails using Composio actions.execute()
+            # Try without specifying connected_account first
             query = f"after:{self._format_gmail_date(since_days)}"
+
+            print(f"Gmail: Attempting to fetch with max_results={max_results}, query={query}")
 
             result = composio.actions.execute(
                 action=Action.GMAIL_FETCH_EMAILS,
                 params={
                     "max_results": max_results,
                     "query": query
-                },
-                connected_account=gmail_account.get("id")
+                }
             )
+
+            print(f"Gmail: Raw result: {result}")
 
             messages = result.get("data", {}).get("messages", [])
             print(f"Gmail: Found {len(messages)} messages")
@@ -172,49 +145,22 @@ class EmailFetcher:
         try:
             composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
-            # Get connected accounts for Outlook
-            try:
-                connected_accounts = composio.connected_accounts.get()
-                print(f"Outlook: Found {len(connected_accounts)} connected accounts")
-                print(f"DEBUG: Raw accounts: {connected_accounts}")
-            except Exception as e:
-                print(f"Outlook: Error getting connected accounts: {e}")
-                return []
-
-            if not connected_accounts:
-                print("Outlook: No connected accounts found")
-                return []
-
-            # Get Outlook connected account
-            outlook_account = None
-            for i, account in enumerate(connected_accounts):
-                print(f"DEBUG: Account {i}: {account}")
-                account_dict = account if isinstance(account, dict) else account.__dict__
-                print(f"DEBUG: Account {i} dict: {account_dict}")
-                if (isinstance(account, dict) and (account.get("appId") == "outlook" or account.get("integration") == "outlook")) or \
-                   (hasattr(account, 'appId') and account.appId == "outlook") or \
-                   (hasattr(account, 'integration') and account.integration == "outlook"):
-                    outlook_account = account
-                    print(f"DEBUG: Found Outlook account: {outlook_account}")
-                    break
-
-            if not outlook_account:
-                print("Outlook: No Outlook connected account found")
-                print(f"DEBUG: Available accounts: {[str(a) for a in connected_accounts]}")
-                return []
-
             # Format filter for Outlook
             filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
 
+            print(f"Outlook: Attempting to fetch with limit={max_results}, filter={filter_str}")
+
             # Fetch emails using Composio actions.execute()
+            # Try without specifying connected_account first
             result = composio.actions.execute(
                 action=Action.OUTLOOK_QUERY_EMAILS,
                 params={
                     "limit": max_results,
                     "filter": filter_str
-                },
-                connected_account=outlook_account.get("id")
+                }
             )
+
+            print(f"Outlook: Raw result: {result}")
 
             messages = result.get("data", {}).get("value", [])
             print(f"Outlook: Found {len(messages)} messages")
