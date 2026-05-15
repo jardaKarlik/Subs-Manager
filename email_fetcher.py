@@ -43,6 +43,7 @@ class EmailFetcher:
         emails = []
         try:
             api_key = os.getenv("COMPOSIO_API_KEY")
+            user_email = os.getenv("GMAIL_USER_EMAIL", "")
 
             if not api_key:
                 print("Gmail: Missing COMPOSIO_API_KEY")
@@ -50,19 +51,39 @@ class EmailFetcher:
 
             composio = Composio(api_key=api_key)
 
-            query = f"after:{self._format_gmail_date(since_days)}"
-            print(f"Gmail: Fetching emails with max_results={max_results}, query={query}")
+            # Get connected accounts to find Gmail account
+            print(f"Gmail: Looking for connected account: {user_email}")
+            try:
+                connected_accounts = composio.connected_accounts.get()
+                gmail_account = None
 
-            # Execute fetch_emails action directly
-            user_email = os.getenv("GMAIL_USER_EMAIL", "me")
+                for account in connected_accounts:
+                    account_email = account.get("email") or account.get("accountId") or ""
+                    if user_email.lower() in account_email.lower() or account_email.lower() in user_email.lower():
+                        gmail_account = account
+                        print(f"Gmail: Found connected account: {account.get('email')} (id={account.get('id')})")
+                        break
+
+                if not gmail_account:
+                    print(f"Gmail: No connected account found for {user_email}")
+                    print(f"Gmail: Available accounts: {[acc.get('email') for acc in connected_accounts]}")
+                    return []
+            except Exception as e:
+                print(f"Gmail: Error getting connected accounts: {e}")
+                return []
+
+            query = f"after:{self._format_gmail_date(since_days)}"
+            print(f"Gmail: Fetching with account_id={gmail_account.get('id')}, max_results={max_results}")
+
+            # Execute fetch_emails action with connected account
             result = composio.actions.execute(
                 action=Action.GMAIL_FETCH_EMAILS,
                 params={
-                    "user_id": user_email,
                     "query": query,
                     "max_results": max_results,
                     "include_payload": True
-                }
+                },
+                connected_account=gmail_account.get("id")
             )
 
             print(f"Gmail: Raw result - successful={result.get('successful')}, status={result.get('status')}")
@@ -173,6 +194,7 @@ class EmailFetcher:
         emails = []
         try:
             api_key = os.getenv("COMPOSIO_API_KEY")
+            user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
 
             if not api_key:
                 print("Outlook: Missing COMPOSIO_API_KEY")
@@ -180,18 +202,44 @@ class EmailFetcher:
 
             composio = Composio(api_key=api_key)
 
-            filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
-            print(f"Outlook: Fetching emails with limit={max_results}")
+            # Get connected accounts to find Outlook account
+            print(f"Outlook: Looking for connected account: {user_email}")
+            try:
+                connected_accounts = composio.connected_accounts.get()
+                outlook_account = None
 
-            # Execute outlook list_messages action directly
-            user_email = os.getenv("OUTLOOK_USER_EMAIL", "me")
+                for account in connected_accounts:
+                    account_email = account.get("email") or account.get("accountId") or ""
+                    if user_email.lower() in account_email.lower() or account_email.lower() in user_email.lower():
+                        outlook_account = account
+                        print(f"Outlook: Found connected account: {account.get('email')} (id={account.get('id')})")
+                        break
+
+                if not outlook_account:
+                    print(f"Outlook: No connected account found for {user_email}")
+                    print(f"Outlook: Available accounts: {[acc.get('email') for acc in connected_accounts]}")
+                    return []
+            except Exception as e:
+                print(f"Outlook: Error getting connected accounts: {e}")
+                return []
+
+            # Build date range filter: last N days
+            filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
+
+            # Select fields to retrieve
+            select_fields = "subject,from,sender,bodyPreview,body,receivedDateTime,hasAttachments,isRead,categories"
+
+            print(f"Outlook: Fetching with account_id={outlook_account.get('id')}, date_range={since_days}d, max_results={max_results}")
+
+            # Execute outlook search_messages action with connected account (mailbox-wide)
             result = composio.actions.execute(
-                action=Action.OUTLOOK_LIST_MESSAGES,
+                action=Action.OUTLOOK_SEARCH_MESSAGES,
                 params={
                     "user_id": user_email,
-                    "limit": max_results,
-                    "filter": filter_str
-                }
+                    "filter": filter_str,
+                    "select": select_fields
+                },
+                connected_account=outlook_account.get("id")
             )
 
             print(f"Outlook: Raw result - successful={result.get('successful')}, status={result.get('status')}")
