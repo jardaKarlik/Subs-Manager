@@ -665,9 +665,47 @@ async def health_check():
             "/api/sync-emails",
             "/api/events",
             "/api/cleanup",
+            "/api/webhook/status",
             "/api/add-test-data",
             "/api/health"
         ]
+    }
+
+
+@app.get("/api/webhook/status")
+async def webhook_status(db: AsyncSession = Depends(get_db)):
+    """Simple status endpoint for Discord/Make.com integrations."""
+    from database import ProcessedEmail
+    
+    # Get total subscriptions
+    sub_query = select(func.count(Subscription.id))
+    sub_result = await db.execute(sub_query)
+    total_subs = sub_result.scalar() or 0
+    
+    # Get total cost
+    cost_query = select(Subscription.cost, Subscription.billing_cycle)
+    cost_result = await db.execute(cost_query)
+    subs = cost_result.all()
+    
+    monthly_cost = 0.0
+    for cost, cycle in subs:
+        if cycle == "monthly":
+            monthly_cost += cost
+        elif cycle == "yearly":
+            monthly_cost += cost / 12
+            
+    # Get processed emails count
+    email_query = select(func.count(ProcessedEmail.id))
+    email_result = await db.execute(email_query)
+    total_emails = email_result.scalar() or 0
+    
+    message = f"📊 **Subscription Manager Status**\n\nDatabase contains **{total_subs}** active subscriptions totaling **${monthly_cost:.2f}/month**.\nWe have processed **{total_emails}** emails to find these."
+    
+    return {
+        "content": message,
+        "total_subscriptions": total_subs,
+        "estimated_monthly_cost": round(monthly_cost, 2),
+        "total_emails_processed": total_emails
     }
 
 

@@ -25,13 +25,21 @@ async def main():
     print("   - IMAP: karlik@klikni.org")
     print()
     
+    import os
+    max_results = int(os.getenv("SYNC_MAX_RESULTS", "50000"))
+    since_days = int(os.getenv("SYNC_SINCE_DAYS", "365"))
+    
+    print(f"   [Config] max_results: {max_results}")
+    print(f"   [Config] since_days:  {since_days}")
+    print()
+
     async with AsyncSessionLocal() as session:
-        # Sync last year's emails, up to 1000 per source
+        # Sync configured history
         results = await fetcher.process_emails(
             db=session,
             sources=None,  # All sources
-            max_results=1000,
-            since_days=365
+            max_results=max_results,
+            since_days=since_days
         )
     
     print("\n" + "=" * 60)
