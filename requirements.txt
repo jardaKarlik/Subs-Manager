@@ -11,5 +11,5 @@ httpx
 python-multipart
 
 requests
-composio>=1.0.0
+composio>=0.13.0
 bcrypt
