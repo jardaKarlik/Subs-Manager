@@ -42,32 +42,33 @@ class EmailFetcher:
 
         emails = []
         try:
-            composio_client = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
+            composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
-            # Fetch emails using Composio
+            # Fetch emails using Composio tools.execute()
             query = f"after:{self._format_gmail_date(since_days)}"
 
-            # Use the call_action method instead of execute_action
-            result = composio_client.call_action(
-                action="GMAIL_FETCH_EMAILS",
-                params={
+            result = composio.tools.execute(
+                user_id="default",
+                slug="GMAIL_FETCH_EMAILS",
+                arguments={
                     "max_results": max_results,
                     "query": query
                 }
             )
 
-            messages = result.get("data", {}).get("messages", [])
+            messages = result.get("result", {}).get("messages", [])
             print(f"Gmail: Found {len(messages)} messages")
 
             for msg in messages:
                 message_id = msg.get("id")
                 # Fetch full message
-                detail = composio_client.call_action(
-                    action="GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
-                    params={"message_id": message_id}
+                detail = composio.tools.execute(
+                    user_id="default",
+                    slug="GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+                    arguments={"message_id": message_id}
                 )
 
-                email_data = self._parse_gmail_message(detail, message_id)
+                email_data = self._parse_gmail_message(detail.get("result", {}), message_id)
                 if email_data:
                     emails.append(email_data)
 
@@ -136,21 +137,22 @@ class EmailFetcher:
 
         emails = []
         try:
-            composio_client = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
+            composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
             # Format filter for Outlook
             filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
 
-            # Fetch emails using Composio
-            result = composio_client.call_action(
-                action="OUTLOOK_QUERY_EMAILS",
-                params={
+            # Fetch emails using Composio tools.execute()
+            result = composio.tools.execute(
+                user_id="default",
+                slug="OUTLOOK_QUERY_EMAILS",
+                arguments={
                     "limit": max_results,
                     "filter": filter_str
                 }
             )
 
-            messages = result.get("data", {}).get("value", [])
+            messages = result.get("result", {}).get("value", [])
             print(f"Outlook: Found {len(messages)} messages")
 
             for msg in messages:
