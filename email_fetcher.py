@@ -113,7 +113,8 @@ class EmailFetcher:
                         "include_payload": True,
                     },
                     connected_account_id=gmail_account,
-                    entity_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                    user_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                    dangerously_skip_version_check=True,
                 )
 
                 print(f"Gmail [v2]: result type={type(result).__name__}")
@@ -246,7 +247,8 @@ class EmailFetcher:
                         "limit": max_results,
                     },
                     connected_account_id=outlook_account,
-                    entity_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                    user_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                    dangerously_skip_version_check=True,
                 )
 
                 print(f"Outlook [v2]: result type={type(result).__name__}")
