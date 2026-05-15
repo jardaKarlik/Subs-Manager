@@ -40,7 +40,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
+
+# Mount frontend static files
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+frontend_dir = Path(__file__).parent / "frontend"
+if frontend_dir.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
 
 # ============================================================================
@@ -335,7 +341,7 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
 class ParseEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
     max_results: int = Field(default=1000, ge=1, le=2000)
-    since_days: int = Field(default=365, ge=1, le=730)
+    since_days: int = Field(default=730, ge=1, le=730)
 
 
 class SyncEmailsRequest(BaseModel):
@@ -427,56 +433,161 @@ async def get_events(
 async def add_test_data(db: AsyncSession = Depends(get_db)):
     """Add test subscription data for demonstration."""
     test_data = [
+        # Streaming
         SubscriptionCreate(
             service_name="Netflix",
             category="streaming",
             cost=15.99,
             currency="USD",
             billing_cycle="monthly",
+            start_date="2023-01-10",
+            notes="Plan: Standard",
             source="test"
         ),
         SubscriptionCreate(
-            service_name="Spotify Premium",
-            category="music",
-            cost=9.99,
+service_name="Disney+",
+            category="streaming",
+            cost=10.99,
             currency="USD",
             billing_cycle="monthly",
             source="test"
         ),
+        SubscriptionCreate(
+            service_name="Hulu",
+            category="streaming",
+            cost=7.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Music
+        SubscriptionCreate(
+            service_name="Spotify Premium",
+            category="music",
+            cost=120.00,
+            currency="USD",
+            billing_cycle="yearly",
+            start_date="2022-06-15",
+            notes="Plan: Family",
+            source="test"
+        ),
+        SubscriptionCreate(
+service_name="Apple Music",
+            category="music",
+            cost=10.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Dev Tools
         SubscriptionCreate(
             service_name="GitHub Pro",
             category="dev_tools",
             cost=4.00,
             currency="USD",
             billing_cycle="monthly",
+            start_date="2021-11-20",
+            notes="Plan: Pro",
             source="test"
         ),
         SubscriptionCreate(
-            service_name="Adobe Creative Cloud",
-            category="design",
-            cost=52.99,
+service_name="JetBrains All Products",
+            category="dev_tools",
+            cost=149.00,
+            currency="USD",
+            billing_cycle="yearly",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Vercel Pro",
+            category="dev_tools",
+            cost=20.00,
             currency="USD",
             billing_cycle="monthly",
             source="test"
         ),
+        # Design
+        SubscriptionCreate(
+            service_name="Adobe Creative Cloud",
+            category="design",
+            cost=600.00,
+            currency="USD",
+            billing_cycle="yearly",
+            start_date="2023-03-05",
+            notes="Plan: All Apps",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Figma Professional",
+            category="design",
+            cost=12.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Cloud
         SubscriptionCreate(
             service_name="AWS",
             category="cloud",
             cost=127.45,
             currency="USD",
             billing_cycle="monthly",
+            start_date="2024-01-01",
+            notes="Plan: Pay-as-you-go",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Google Cloud Platform",
+            category="cloud",
+            cost=89.99,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # AI
+        SubscriptionCreate(
+            service_name="ChatGPT Plus",
+            category="ai",
+            cost=20.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Anthropic Claude API",
+            category="ai",
+            cost=0.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        # Productivity
+        SubscriptionCreate(
+            service_name="Notion Personal",
+            category="productivity",
+            cost=10.00,
+            currency="USD",
+            billing_cycle="monthly",
+            source="test"
+        ),
+        SubscriptionCreate(
+            service_name="Slack Pro",
+            category="productivity",
+            cost=8.99,
+            currency="USD",
+            billing_cycle="monthly",
             source="test"
         ),
     ]
-    
+
     count = 0
     for sub_data in test_data:
         sub = Subscription(**sub_data.model_dump())
         db.add(sub)
         count += 1
-    
+
     await db.commit()
-    
+
     return {
         "success": True,
         "message": f"Added {count} test subscriptions",
@@ -564,4 +675,8 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    port = int(os.getenv("API_PORT", "8000"))
+    uvicorn.run("api:app", host="0.0.0.0", port=port, reload=True)

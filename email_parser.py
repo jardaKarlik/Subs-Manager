@@ -106,6 +106,7 @@ PAYMENT_PROCESSORS = {
     'google pay': r'google\s*(pay|payment)',
     'apple pay': r'apple\s*pay',
     'stripe': r'stripe',
+    'bank': r'bank|card transaction|transaction notification|platba kartou|odchozí platba|zaúčtovaná platba',
 }
 
 # Czech bank patterns
@@ -140,12 +141,23 @@ PAYMENT_INDICATOR_KEYWORDS = [
     'you successfully sent a payment', 'you paid', 'payment to',
     'automatic payment', 'receipt #', 'transaction id',
     'payment confirmation', 'payment received',
+    'card transaction', 'transaction notification', 'bank transfer',
+    'platba kartou', 'odchozí platba', 'zaúčtovaná platba',
 ]
 
 FREE_SERVICE_KEYWORDS = [
     'welcome to', 'thank you for joining', 'thank you for registering',
     'account verified', 'verification complete', 'welcome aboard',
     'thanks for signing up', 'you\'re all set',
+    'authorization successful', 'connected your account', 'app authorized',
+    'account connected', 'login successful', 'new sign-in',
+]
+
+ACCOUNT_CREATION_KEYWORDS = [
+    'welcome to', 'thank you for joining', 'thank you for registering',
+    'account created', 'account verified', 'verification complete', 
+    'welcome aboard', 'thanks for signing up', 'your account is now active',
+    'get started with', 'welcome to the community', 'registration successful',
 ]
 
 NEGATIVE_KEYWORDS = [
@@ -154,7 +166,36 @@ NEGATIVE_KEYWORDS = [
     'referral', 'invite', 'gift', 'reward',
     'unsubscribe', 'marketing', 'newsletter',
     'action required', 'verify your', 'confirm your email',
+    'job alert', 'board snapshot', 'digest', 'weekly update',
 ]
+
+MUSIC_PURCHASE_HINTS = [
+    'download', 'track', 'release', 'label', 'wav', 'mp3', 'order', 'purchase',
+]
+
+# Search query groups for mailbox-side discovery. These keep initial tests small
+# while covering subscription confirmations, payment notifications, free active
+# accounts, and music purchases/tools.
+SEARCH_QUERY_GROUPS = {
+    'subscription': [
+        'subject:(subscription OR invoice OR receipt OR billing OR renewal)',
+        '"thank you for subscribing" OR "subscription confirmed" OR "your plan"',
+        '"welcome to" OR "thank you for joining" OR "account verified"',
+    ],
+    'payment': [
+        'from:(paypal OR stripe) OR "google pay" OR "apple pay"',
+        '"receipt for your payment" OR "you paid" OR "automatic payment"',
+        '"platba" OR "faktura" OR "daňový doklad" OR "zúčtování"',
+    ],
+    'music': [
+        'beatport OR discogs OR bandcamp OR spotify OR tidal OR soundcloud',
+        'serato OR traktor OR ableton OR rekordbox OR "native instruments"',
+    ],
+    'free_active': [
+        '"welcome to" OR "account connected" OR "authorization successful"',
+        '"thanks for signing up" OR "verification complete"',
+    ],
+}
 
 # ─── Layer 3: Amount Extraction ─────────────────────────────────────────────
 
@@ -203,11 +244,50 @@ class EmailClassifier:
             'negative': re.compile(r'\b(' + '|'.join(NEGATIVE_KEYWORDS) + r')\b', re.IGNORECASE),
         }
 
+    def extract_plan_name(self, text: str, service_name: str) -> str:
+        """
+        Extract plan name from email body.
+        Examples: "Spotify Premium", "GitHub Pro", "Adobe Creative Cloud"
+        """
+        text_lower = text.lower()
+
+        # Common plan keywords to look for
+        plan_keywords = [
+            "premium", "pro", "plus", "family", "enterprise", "standard", 
+            "basic", "professional", "max", "ultimate", "personal", "student",
+            "business", "starter", "growth", "team", "teams"
+        ]
+        
+        # Specific patterns
+        plan_patterns = [
+            r"plan:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"subscription:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"tier:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"version\s*[:=]?\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"([a-z0-9\s]+?)\s+plan\b",
+        ]
+
+        # 1. Try keyword-based matching first (more precise for "Spotify Premium")
+        for kw in plan_keywords:
+            if re.search(r"\b" + kw + r"\b", text_lower):
+                return kw.title()
+
+        # 2. Try regex patterns
+        for pattern in plan_patterns:
+            matches = re.findall(pattern, text_lower, re.IGNORECASE)
+            for match in matches:
+                plan = match.strip().title() if isinstance(match, str) else match[0].strip().title()
+                # Filter out common false positives and long strings
+                if plan and len(plan) < 30 and plan not in ["The", "Your", "A", "An", "And", "Or", "Is", "This", "Of"]:
+                    return plan
+
+        return "Standard"
+
     def classify(self, subject: str, sender: str, body: str) -> Dict:
         """
         Classify an email and return structured result with confidence.
         Returns dict with: is_subscription, confidence, service_name, category,
-                          cost, currency, billing_cycle, is_free, source_type
+                          cost, currency, billing_cycle, is_free, source_type, plan_name
         """
         text = f"{subject} {body}"
         text_lower = text.lower()
@@ -306,6 +386,13 @@ class EmailClassifier:
         # Detect billing cycle
         billing_cycle = self._detect_billing_cycle(text)
 
+<<<<<<< Updated upstream
+        # Extract plan name from email body ✅ FIX #3
+        plan_name = self.extract_plan_name(text, service_name or 'Unknown')
+=======
+        category = self._refine_category(service_name, category, text_lower)
+>>>>>>> Stashed changes
+
         # Determine source type
         if is_free:
             source_type = 'free_active'
@@ -322,6 +409,7 @@ class EmailClassifier:
             'category': category,
             'cost': amount,
             'currency': currency,
+            'plan_name': plan_name,
             'billing_cycle': billing_cycle,
             'source_type': source_type,
             'payment_processor': payment_proc,
@@ -375,13 +463,16 @@ class EmailClassifier:
         """Extract the actual service name from payment processor email body."""
         patterns = {
             'paypal': [
-                # "payment to X" - stop at sentence end, currency, or known delimiters
-                r'payment to\s+([A-Z][A-Za-z0-9\s.&-]{1,40}?)(?:\s*[.!?]|\s*\n|\s+View|\s+Receipt|\s+\$|€|£|Kč|\d)',
-                # "You paid $X to Y" - capture service after amount
-                r'You paid\s+(?:\$|€|£|Kč)?[\d\s,.]+\s+(?:USD|EUR|CZK)?\s+to\s+([A-Z][A-Za-z0-9\s.&-]{1,40}?)(?:\s*[.!?]|\s*$|\s+\$|€|£|Kč)',
+                r'to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*(?:View|Receipt|Details|Transaction|$)|[.!?\n])',
+                r'payment to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*(?:View|Receipt|Details|Transaction|$)|[.!?\n])',
+                r'You paid\s+(?:\$|€|£|Kč)?[\d\s,.]+\s*(?:USD|EUR|CZK|GBP)?\s+to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*(?:View|Receipt|Details|Transaction|$)|[.!?\n])',
             ],
             'google pay': [
                 r'payment to\s+([A-Z][A-Za-z0-9\s.&-]{1,40})(?:\s*[.!?]|\s*$)',
+            ],
+            'stripe': [
+                r'receipt from\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*#|[.!?\n]|$)',
+                r'paid\s+(?:\$|€|£|Kč)?[\d\s,.]+\s*(?:USD|EUR|CZK|GBP)?\s+to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:[.!?\n]|$)',
             ],
         }
 
@@ -390,10 +481,38 @@ class EmailClassifier:
             if match:
                 service = match.group(1).strip()
                 # Clean up common suffixes and trailing punctuation
-                service = re.sub(r'\s+(LLC|Ltd|Inc|GmbH|S\.r\.o\.|a\.s\.|s\.r\.o|Limited)\.?$', '', service, flags=re.I)
-                service = re.sub(r'[,;]$', '', service)
+                service = re.sub(r'\s+(LLC|Ltd|Inc|GmbH|S\.r\.o\.|a\.s\.|s\.r\.o|Limited|PBC)\.?$', '', service, flags=re.I)
+                service = re.sub(r'\s+(Luxembourg|Ireland|Payments)$', '', service, flags=re.I)
+                service = re.sub(r'\s+', ' ', service)
+                service = re.sub(r'[,;:#-]+$', '', service).strip()
                 return service
         return None
+
+    def _refine_category(self, service_name: Optional[str], category: str, text_lower: str) -> str:
+        """Refine broad categories using service and message context."""
+        service_lower = (service_name or '').lower()
+        combined = f"{service_lower} {text_lower}"
+
+        if any(tool in combined for tool in ('serato', 'traktor', 'ableton', 'rekordbox', 'native instruments', 'izotope')):
+            return 'music_tools'
+
+        if any(music in combined for music in ('beatport', 'discogs', 'bandcamp')):
+            return 'music'
+
+        if category == 'music' and any(hint in combined for hint in MUSIC_PURCHASE_HINTS):
+            return 'music'
+
+        return category
+
+    def build_search_queries(self, since_days: int = 365, groups: Optional[List[str]] = None) -> List[str]:
+        """Build Gmail-style discovery queries for targeted mailbox sampling/backfill."""
+        selected = groups or list(SEARCH_QUERY_GROUPS.keys())
+        after = (datetime.now() - timedelta(days=since_days)).strftime('%Y/%m/%d')
+        queries = []
+        for group in selected:
+            for query in SEARCH_QUERY_GROUPS.get(group, []):
+                queries.append(f"({query}) after:{after}")
+        return queries
 
     def _extract_amount(self, text: str) -> Tuple[float, str]:
         """Extract monetary amount and currency from text."""
@@ -518,3 +637,5 @@ def test_classifier():
 
 if __name__ == "__main__":
     test_classifier()
+
+

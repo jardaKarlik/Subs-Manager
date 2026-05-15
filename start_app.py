@@ -17,7 +17,7 @@ def start_backend():
     backend_process = subprocess.Popen([
         sys.executable, "-m", "uvicorn", "api:app", 
         "--host", "0.0.0.0", 
-        "--port", "8000", 
+        "--port", "8000",
         "--reload"
     ], cwd=Path(__file__).parent)
     return backend_process

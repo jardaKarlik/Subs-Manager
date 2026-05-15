@@ -9,3 +9,7 @@ asyncpg
 psycopg2-binary
 httpx
 python-multipart
+
+requests
+composio-core
+bcrypt

@@ -8,15 +8,19 @@ import os
 import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
+from sqlalchemy import func
+
+import email.utils
+
 from email.parser import Parser
 from email.header import decode_header
 
-from email_parser import EmailClassifier
+from email_parser import EmailClassifier, ACCOUNT_CREATION_KEYWORDS
 from database import (
     Subscription, ProcessedEmail, SubscriptionEvent,
     AsyncSessionLocal, AsyncSession
 )
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -204,9 +208,14 @@ class EmailFetcher:
             print("IMAP credentials not configured, skipping")
             return []
 
+        verify_ssl = os.getenv("IMAP_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
+
         emails = []
         try:
             context = ssl.create_default_context()
+            if not verify_ssl:
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
             with imaplib.IMAP4_SSL(server, port, ssl_context=context) as mail:
                 mail.login(user, password)
                 mail.select("inbox")
@@ -381,7 +390,30 @@ class EmailFetcher:
                         existing.billing_cycle = classification["billing_cycle"]
                         existing.updated_at = datetime.utcnow()
                         subscription_id = existing.id
+                        target_sub = existing
                     else:
+                        # Extract start date from email date
+                        start_date = None
+                        email_date = email.get("date", "")
+                        if email_date:
+                            try:
+                                # Try standard email date parser
+                                email_datetime = email.utils.parsedate_to_datetime(email_date)
+                                start_date = email_datetime.strftime("%Y-%m-%d")
+                            except Exception:
+                                try:
+                                    # Fallback to ISO
+                                    email_datetime = datetime.fromisoformat(email_date.replace("Z", "+00:00"))
+                                    start_date = email_datetime.strftime("%Y-%m-%d")
+                                except Exception:
+                                    pass
+                        
+                        if not start_date:
+                            start_date = datetime.utcnow().strftime("%Y-%m-%d")
+
+                        # Extract plan type if available
+                        plan_name = classification.get("plan_name", "Standard")
+
                         # Create new subscription
                         new_sub = Subscription(
                             service_name=classification["service_name"],
@@ -390,14 +422,26 @@ class EmailFetcher:
                             currency=classification["currency"],
                             billing_cycle=classification["billing_cycle"],
                             status="active",
+                            start_date=start_date,                              # ? FIX #2: From email date
+                            notes=f"Plan: {plan_name}",                         # ? FIX #3: Store plan type
                             source=email["source"],
                         )
                         db.add(new_sub)
                         await db.flush()  # Get the ID
                         subscription_id = new_sub.id
                         results["new_subscriptions"] += 1
+                        target_sub = new_sub
 
-                    # Record event for time-based tracking
+                    # Determine event date from email
+                    email_date = datetime.utcnow()
+                    try:
+                        raw_date = email.get("date", "")
+                        if raw_date:
+                            from dateutil import parser
+                            email_date = parser.parse(raw_date)
+                    except Exception:
+                        pass
+
                     event = SubscriptionEvent(
                         subscription_id=subscription_id,
                         service_name=classification["service_name"],
@@ -405,11 +449,18 @@ class EmailFetcher:
                         amount=classification["cost"],
                         currency=classification["currency"],
                         billing_cycle=classification["billing_cycle"],
-                        event_date=datetime.utcnow(),
+                        event_date=email_date,
                         source_type=classification["source_type"],
                         message_id=email["_unique_id"]
                     )
                     db.add(event)
+
+                    # Update start_date if this is an account creation email
+                    email_text = f"{email.get('subject', '')} {email.get('body', '')}".lower()
+                    if any(kw in email_text for kw in ACCOUNT_CREATION_KEYWORDS):
+                        start_date_str = email_date.strftime("%Y-%m-%d")
+                        if not target_sub.start_date or start_date_str < target_sub.start_date:
+                            target_sub.start_date = start_date_str
 
                 results["processed"] += 1
 
@@ -453,3 +504,5 @@ class EmailFetcher:
             else:
                 result.append(part)
         return "".join(result)
+
+
