@@ -108,7 +108,7 @@ class EmailFetcher:
                 page_token = None
                 
                 while fetched_count < max_results:
-                    batch_size = min(50, max_results - fetched_count)
+                    batch_size = min(10, max_results - fetched_count)
                     arguments = {
                         "query": query,
                         "max_results": batch_size,
@@ -137,6 +137,9 @@ class EmailFetcher:
                     page_token = data.get("nextPageToken")
                     if not page_token:
                         break
+                        
+                    import asyncio
+                    await asyncio.sleep(2)
 
                 if emails:
                     print(f"Gmail [v2]: total emails extracted: {len(emails)}")
@@ -253,7 +256,7 @@ class EmailFetcher:
                 fetched_count = 0
                 
                 while fetched_count < max_results:
-                    batch_size = min(50, max_results - fetched_count)
+                    batch_size = min(10, max_results - fetched_count)
                     arguments = {
                         "user_id": user_email,
                         "select": select_fields,
@@ -282,6 +285,9 @@ class EmailFetcher:
                     
                     if not data.get("@odata.nextLink") or len(batch_emails) == 0:
                         break
+                        
+                    import asyncio
+                    await asyncio.sleep(2)
 
                 if emails:
                     print(f"Outlook [v2]: total emails extracted: {len(emails)}")
