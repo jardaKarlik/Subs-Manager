@@ -35,7 +35,7 @@ class EmailFetcher:
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Gmail using Composio SDK."""
         try:
-            from composio import Composio
+            from composio import Composio, Action
         except ImportError:
             print("Composio SDK not available, skipping Gmail")
             return []
@@ -44,31 +44,29 @@ class EmailFetcher:
         try:
             composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
-            # Fetch emails using Composio tools.execute()
+            # Fetch emails using Composio actions.execute()
             query = f"after:{self._format_gmail_date(since_days)}"
 
-            result = composio.tools.execute(
-                user_id="default",
-                slug="GMAIL_FETCH_EMAILS",
-                arguments={
+            result = composio.actions.execute(
+                action=Action.GMAIL_FETCH_EMAILS,
+                params={
                     "max_results": max_results,
                     "query": query
                 }
             )
 
-            messages = result.get("result", {}).get("messages", [])
+            messages = result.get("data", {}).get("messages", [])
             print(f"Gmail: Found {len(messages)} messages")
 
             for msg in messages:
                 message_id = msg.get("id")
                 # Fetch full message
-                detail = composio.tools.execute(
-                    user_id="default",
-                    slug="GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
-                    arguments={"message_id": message_id}
+                detail = composio.actions.execute(
+                    action=Action.GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID,
+                    params={"message_id": message_id}
                 )
 
-                email_data = self._parse_gmail_message(detail.get("result", {}), message_id)
+                email_data = self._parse_gmail_message(detail.get("data", {}), message_id)
                 if email_data:
                     emails.append(email_data)
 
@@ -130,7 +128,7 @@ class EmailFetcher:
     async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Outlook using Composio SDK."""
         try:
-            from composio import Composio
+            from composio import Composio, Action
         except ImportError:
             print("Composio SDK not available, skipping Outlook")
             return []
@@ -142,17 +140,16 @@ class EmailFetcher:
             # Format filter for Outlook
             filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
 
-            # Fetch emails using Composio tools.execute()
-            result = composio.tools.execute(
-                user_id="default",
-                slug="OUTLOOK_QUERY_EMAILS",
-                arguments={
+            # Fetch emails using Composio actions.execute()
+            result = composio.actions.execute(
+                action=Action.OUTLOOK_QUERY_EMAILS,
+                params={
                     "limit": max_results,
                     "filter": filter_str
                 }
             )
 
-            messages = result.get("result", {}).get("value", [])
+            messages = result.get("data", {}).get("value", [])
             print(f"Outlook: Found {len(messages)} messages")
 
             for msg in messages:
