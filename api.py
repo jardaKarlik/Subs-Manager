@@ -343,8 +343,8 @@ class ParseEmailsRequest(BaseModel):
 
 class SyncEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
-    max_results: int = Field(default=100, ge=1, le=1000)
-    since_days: int = Field(default=3, ge=1, le=30)
+    max_results: int = Field(default=100, ge=1, le=50000)
+    since_days: int = Field(default=3, ge=1, le=365)
 
 
 @app.post("/api/parse-emails")
