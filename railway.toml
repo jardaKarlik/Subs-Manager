@@ -14,11 +14,6 @@ variables = [
 ]
 
 [[services]]
-name = "backend"
+name = "app"
 startCommand = "python -m uvicorn api:app --host 0.0.0.0 --port $PORT"
 ports = [{ port = 8000, type = "HTTP" }]
-
-[[services]]
-name = "frontend"
-startCommand = "cd frontend && python -m http.server 3000"
-ports = [{ port = 3000, type = "HTTP" }]
