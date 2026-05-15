@@ -368,8 +368,8 @@ class EmailFetcher:
         try:
             await db.commit()
         except Exception as e:
-            print(f"Database commit error: {e}")
             await db.rollback()
+            raise RuntimeError(f"Database commit failed for batch: {e}") from e
 
     async def _stream_fetch_and_process_gmail(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
         """Fetch Gmail in batches and process immediately."""
@@ -432,7 +432,7 @@ class EmailFetcher:
         results["sources"]["outlook"] = fetched_count
 
     async def process_emails(self, db: AsyncSession, sources: List[str] = None, max_results: int = 500, since_days: int = 365) -> Dict:
-        """Fetch and process emails incrementally."""
+        """Fetch and process emails incrementally. Raises on critical failure."""
         if sources is None: sources = ["gmail", "outlook", "imap"]
         results = {"processed": 0, "new_subscriptions": 0, "skipped": 0, "failed": 0, "sources": {}}
         for source in sources:
@@ -444,9 +444,11 @@ class EmailFetcher:
                     if emails: await self._process_email_batch(db, emails, results)
                     results["sources"]["imap"] = len(emails)
             except Exception as e:
-                print(f"Error processing source {source}: {e}")
-                results["sources"][source] = f"error: {str(e)}"
-                results["failed"] += 1
+                # Log and re-raise critical errors (DB failures, auth failures)
+                # so the API returns HTTP 500 instead of fake success counts
+                import logging
+                logging.getLogger(__name__).error(f"Critical error processing source {source}: {e}")
+                raise RuntimeError(f"Email processing failed for {source}: {e}") from e
         return results
 
     # ── Helpers ────────────────────────────────────────────────────
