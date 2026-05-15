@@ -675,32 +675,47 @@ async def health_check():
 @app.get("/api/webhook/status")
 async def webhook_status(db: AsyncSession = Depends(get_db)):
     """Simple status endpoint for Discord/Make.com integrations."""
-    from database import ProcessedEmail
-    
+    from database import ProcessedEmail, SubscriptionEvent
+
     # Get total subscriptions
     sub_query = select(func.count(Subscription.id))
     sub_result = await db.execute(sub_query)
     total_subs = sub_result.scalar() or 0
-    
+
     # Get total cost
     cost_query = select(Subscription.cost, Subscription.billing_cycle)
     cost_result = await db.execute(cost_query)
     subs = cost_result.all()
-    
+
     monthly_cost = 0.0
     for cost, cycle in subs:
         if cycle == "monthly":
             monthly_cost += cost
         elif cycle == "yearly":
             monthly_cost += cost / 12
-            
+
     # Get processed emails count
-    email_query = select(func.count(ProcessedEmail.message_id))
-    email_result = await db.execute(email_query)
-    total_emails = email_result.scalar() or 0
-    
+    # Primary: count ProcessedEmail records (exact dedup tracker)
+    total_emails = 0
+    try:
+        email_query = select(func.count(ProcessedEmail.message_id))
+        email_result = await db.execute(email_query)
+        total_emails = email_result.scalar() or 0
+    except Exception:
+        pass
+
+    # Fallback: count distinct source emails from subscription_events
+    # (useful when ProcessedEmail is empty, e.g. ephemeral SQLite on Railway)
+    if total_emails == 0:
+        try:
+            event_query = select(func.count(func.distinct(SubscriptionEvent.message_id)))
+            event_result = await db.execute(event_query)
+            total_emails = event_result.scalar() or 0
+        except Exception:
+            pass
+
     message = f"📊 **Subscription Manager Status**\n\nDatabase contains **{total_subs}** active subscriptions totaling **${monthly_cost:.2f}/month**.\nWe have processed **{total_emails}** emails to find these."
-    
+
     return {
         "content": message,
         "total_subscriptions": total_subs,
