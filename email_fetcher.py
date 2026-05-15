@@ -112,7 +112,6 @@ class EmailFetcher:
                         "max_results": max_results,
                         "include_payload": True,
                     },
-                    connected_account_id=gmail_account,
                     user_id=os.getenv("COMPOSIO_USER_ID", "default"),
                     dangerously_skip_version_check=True,
                 )
@@ -246,7 +245,6 @@ class EmailFetcher:
                         "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}",
                         "top": max_results,
                     },
-                    connected_account_id=outlook_account,
                     user_id=os.getenv("COMPOSIO_USER_ID", "default"),
                     dangerously_skip_version_check=True,
                 )
