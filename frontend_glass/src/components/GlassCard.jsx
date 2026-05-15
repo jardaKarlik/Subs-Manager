@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 
 export default function GlassCard({ subscription, initials, colors, delay }) {
+  const [logoFailed, setLogoFailed] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const cardRef = useRef(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
@@ -112,19 +113,20 @@ export default function GlassCard({ subscription, initials, colors, delay }) {
         <div className="relative z-10">
           {/* Logo / Icon */}
           <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center mb-4 shadow-lg group-hover:shadow-xl transition-all overflow-hidden">
-            {subscription.icon_url ? (
+            {subscription.icon_url && !logoFailed ? (
               <img
                 src={subscription.icon_url}
                 alt={subscription.service_name}
                 className="w-10 h-10 object-contain"
-                onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                onError={() => setLogoFailed(true)}
               />
-            ) : null}
-            <div
-              className={`w-full h-full bg-gradient-to-br ${colors.bg} flex items-center justify-center font-bold text-lg text-white ${subscription.icon_url ? 'hidden' : ''}`}
-            >
-              {initials}
-            </div>
+            ) : (
+              <div
+                className={`w-full h-full bg-gradient-to-br ${colors.bg} flex items-center justify-center font-bold text-lg text-white`}
+              >
+                {initials}
+              </div>
+            )}
           </div>
 
           {/* Name & Category */}
