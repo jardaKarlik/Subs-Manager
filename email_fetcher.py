@@ -71,7 +71,9 @@ class EmailFetcher:
                     emails.append(email_data)
 
         except Exception as e:
-            print(f"Gmail fetch error: {e}")
+            import traceback
+            print(f"Gmail fetch error: {type(e).__name__}: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
 
         return emails
 
@@ -158,7 +160,9 @@ class EmailFetcher:
                     emails.append(email_data)
 
         except Exception as e:
-            print(f"Outlook fetch error: {e}")
+            import traceback
+            print(f"Outlook fetch error: {type(e).__name__}: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
 
         return emails
 
