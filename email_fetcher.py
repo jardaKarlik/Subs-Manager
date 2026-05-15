@@ -31,6 +31,117 @@ from database import (
 # Composio SDK calls respect standard SSL context and do NOT need monkey-patching.
 
 IMAP_VERIFY_SSL = os.getenv("IMAP_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
+# ── Logo lookup (service name → domain for Clearbit Logo API) ──────────────
+_LOGO_DOMAINS = {
+    "google": "google.com", "gmail": "google.com", "google cloud": "cloud.google.com",
+    "spotify": "spotify.com", "netflix": "netflix.com", "amazon": "amazon.com",
+    "prime": "amazon.com", "adobe": "adobe.com", "microsoft": "microsoft.com",
+    "office 365": "microsoft.com", "github": "github.com", "slack": "slack.com",
+    "notion": "notion.so", "figma": "figma.com", "canva": "canva.com",
+    "discord": "discord.com", "zoom": "zoom.us", "dropbox": "dropbox.com",
+    "aws": "aws.amazon.com", "heroku": "heroku.com", "vercel": "vercel.com",
+    "openai": "openai.com", "chatgpt": "openai.com", "anthropic": "anthropic.com",
+    "claude": "anthropic.com", "midjourney": "midjourney.com", "playstation": "playstation.com",
+    "xbox": "xbox.com", "steam": "steampowered.com", "epic games": "epicgames.com",
+    "nintendo": "nintendo.com", "beatport": "beatport.com", "wix": "wix.com",
+    "last.fm": "last.fm", "lastfm": "last.fm", "prismray": "prismray.com",
+    "apple": "apple.com", "icloud": "apple.com", "youtube": "youtube.com",
+    "twitter": "twitter.com", "x": "x.com", "meta": "meta.com",
+    "facebook": "facebook.com", "instagram": "instagram.com", "tiktok": "tiktok.com",
+    "linkedin": "linkedin.com", "patreon": "patreon.com", "substack": "substack.com",
+    "medium": "medium.com", "pinterest": "pinterest.com", "reddit": "reddit.com",
+    "twitch": "twitch.com", "vimeo": "vimeo.com", "soundcloud": "soundcloud.com",
+    "bandcamp": "bandcamp.com", "deezer": "deezer.com", "tidal": "tidal.com",
+    "pandora": "pandora.com", "audible": "audible.com", "kindle": "amazon.com",
+    "hulu": "hulu.com", "disney+": "disneyplus.com", "hbo": "hbo.com",
+    "paramount+": "paramountplus.com", "peacock": "peacocktv.com", "crunchyroll": "crunchyroll.com",
+    "funimation": "funimation.com", "vrv": "vrv.co", "roku": "roku.com",
+    "plex": "plex.tv", "jellyfin": "jellyfin.org", "emby": "emby.media",
+    "synology": "synology.com", "qbittorrent": "qbittorrent.org", "plexamp": "plex.tv",
+    "coursera": "coursera.org", "udemy": "udemy.com", "skillshare": "skillshare.com",
+    "pluralsight": "pluralsight.com", "linkedin learning": "linkedin.com", "masterclass": "masterclass.com",
+    "duolingo": "duolingo.com", "babbel": "babbel.com", "rosetta stone": "rosettastone.com",
+    "nordvpn": "nordvpn.com", "expressvpn": "expressvpn.com", "protonvpn": "protonvpn.com",
+    "surfshark": "surfshark.com", "cyberghost": "cyberghostvpn.com", "private internet access": "privateinternetaccess.com",
+    "1password": "1password.com", "lastpass": "lastpass.com", "bitwarden": "bitwarden.com",
+    "dashlane": "dashlane.com", "keeper": "keepersecurity.com", "nordpass": "nordpass.com",
+    "malwarebytes": "malwarebytes.com", "kaspersky": "kaspersky.com", "avast": "avast.com",
+    "avg": "avg.com", "bitdefender": "bitdefender.com", "mcafee": "mcafee.com",
+    "norton": "norton.com", "eset": "eset.com", "f-secure": "f-secure.com",
+    "protonmail": "proton.me", "tutanota": "tutanota.com", "fastmail": "fastmail.com",
+    "hey": "hey.com", "zoho": "zoho.com", "mailchimp": "mailchimp.com",
+    "sendgrid": "sendgrid.com", "postmark": "postmarkapp.com", "mailgun": "mailgun.com",
+    "convertkit": "convertkit.com", "aweber": "aweber.com", "getresponse": "getresponse.com",
+    "constant contact": "constantcontact.com", "hubspot": "hubspot.com", "salesforce": "salesforce.com",
+    "zendesk": "zendesk.com", "intercom": "intercom.com", "freshdesk": "freshdesk.com",
+    "help scout": "helpscout.com", "livechat": "livechat.com", "tawk.to": "tawk.to",
+    "crisp": "crisp.chat", "drift": "drift.com", "olark": "olark.com",
+    "typeform": "typeform.com", "google forms": "google.com", "survey monkey": "surveymonkey.com",
+    "qualtrics": "qualtrics.com", "jotform": "jotform.com", "wufoo": "wufoo.com",
+    "formstack": "formstack.com", "paperform": "paperform.co", "cognito forms": "cognitoforms.com",
+    "gravity forms": "gravityforms.com", "ninja forms": "ninjaforms.com", "wpforms": "wpforms.com",
+    "calendly": "calendly.com", "cal.com": "cal.com", "acuity scheduling": "acuityscheduling.com",
+    "squarespace": "squarespace.com", "wix": "wix.com", "weebly": "weebly.com",
+    "shopify": "shopify.com", "bigcommerce": "bigcommerce.com", "woocommerce": "woocommerce.com",
+    "magento": "magento.com", "prestashop": "prestashop.com", "opencart": "opencart.com",
+    "etsy": "etsy.com", "ebay": "ebay.com", "newegg": "newegg.com",
+    "overstock": "overstock.com", "wayfair": "wayfair.com", "aliexpress": "aliexpress.com",
+    "alibaba": "alibaba.com", "dhgate": "dhgate.com", "banggood": "banggood.com",
+    "gearbest": "gearbest.com", "tomtop": "tomtop.com", "dx": "dx.com",
+    "lightinthebox": "lightinthebox.com", "miniinthebox": "miniinthebox.com", "dealextreme": "dx.com",
+    "rakuten": "rakuten.com", "mercari": "mercari.com", "poshmark": "poshmark.com",
+    "thredup": "thredup.com", "the realreal": "therealreal.com", "vestiaire collective": "vestiairecollective.com",
+    "grailed": "grailed.com", "depop": "depop.com", "stockx": "stockx.com",
+    "goat": "goat.com", "flight club": "flightclub.com", "stadium goods": "stadiumgoods.com",
+    "klekt": "klekt.com", "sneakersnstuff": "sneakersnstuff.com", "end clothing": "endclothing.com",
+    "ssense": "ssense.com", "farfetch": "farfetch.com", "matchesfashion": "matchesfashion.com",
+    "mytheresa": "mytheresa.com", "net-a-porter": "net-a-porter.com", "mr porter": "mrporter.com",
+    "browns fashion": "brownsfashion.com", " LN-CC": "ln-cc.com", "slam jam": "slamjam.com",
+    "solebox": "solebox.com", "afew store": "afew-store.com", "asphaltgold": "asphaltgold.de",
+    "overkillshop": "overkillshop.com", "43einhalb": "43einhalb.com", "titoloshop": "titoloshop.com",
+    "sivasdescalzo": "sivasdescalzo.com", "foot district": "footdistrict.com", "bstn": "bstn.com",
+    "sneakerbaas": "sneakerbaas.nl", "crooked tongues": "crookedtongues.com", "size?": "size.co.uk",
+    "foot locker": "footlocker.com", "champs sports": "champssports.com", "eastbay": "eastbay.com",
+    "finish line": "finishline.com", "jd sports": "jdsports.com", "footaction": "footaction.com",
+    "shiekh shoes": "shiekhshoes.com", "snipes": "snipes.com", "dick's sporting goods": "dickssportinggoods.com",
+    "academy sports": "academy.com", "big 5 sporting goods": "big5sportinggoods.com", "sports authority": "sportsauthority.com",
+    "modell's": "modells.com", "paragon sports": "paragonsports.com", "city sports": "citysports.com",
+    "running warehouse": "runningwarehouse.com", "road runner sports": "roadrunnersports.com", "holabird sports": "holabirdsports.com",
+    "tennis warehouse": "tennis-warehouse.com", "midwest sports": "midwestsports.com", "tennis express": "tennisexpress.com",
+    "golf galaxy": "golfgalaxy.com", "golf discount": "golfdiscount.com", "rockbottomgolf": "rockbottomgolf.com",
+    "global golf": "globalgolf.com", "2nd swing": "2ndswing.com", "callaway preowned": "callawaygolfpreowned.com",
+    "tgw": "tgw.com", "worldwide golf shops": "worldwidegolfshops.com", "golfsmith": "golfsmith.com",
+    "pga tour superstore": "pgatoursuperstore.com", "golf town": "golftown.com", "american golf": "americangolf.co.uk",
+    "golfino": "golfino.com", "galvin green": "galvingreen.com", "kjus": "kjus.com",
+    "j.lindeberg": "jlindeberg.com", "peak performance": "peakperformance.com", "rossignol": "rossignol.com",
+    "atomic": "atomicsnow.com", "salomon": "salomon.com", "dynastar": "dynastar.com",
+    "k2": "k2sports.com", "volkl": "voelkl.com", "head": "head.com",
+    "fischer": "fischer-ski.com", "nordica": "nordica.com", "blizzard": "blizzard-tecnica.com",
+    "elan": "elanskis.com", "movement": "movementskis.com", "black crows": "black-crows.com",
+    " faction": "factionskis.com", "armada": "armadaskis.com", "4frnt": "4frnt.com",
+    "on3p": "on3pskis.com", "moment": "momentskis.com", "line": "lineskis.com",
+    "icelantic": "icelanticskis.com", "liberty": "libertyskis.com", "prior": "priorskis.com",
+    "whitedot": "whitedotskis.com", "dps skis": "dpskis.com", "renoun": "renounskis.com",
+    "shaggy's copper country skis": "shaggyskc.com", "wagner custom skis": "wagnerskis.com", "folsom custom skis": "folsomskis.com",
+    "meier skis": "meierskis.com", "IGOSKI": "igoski.com", "völkl": "voelkl.com",
+    "rossignol": "rossignol.com", "dynastar": "dynastar.com", "kastle": "kastle-ski.com",
+    "stöckli": "stockli.ch", "zai": "zai-ski.com", "eder": "eder-ski.com",
+    "blossom": "blossom-ski.com", "kneissl": "kneissl.com", "hagan": "haganski.com",
+    "movement skis": "movementskis.com", "scott sports": "scott-sports.com", "k2 skis": "k2sports.com",
+    "salomon skis": "salomon.com", "atomic skis": "atomicsnow.com", "head skis": "head.com",
+    "fischer skis": "fischer-ski.com", "nordica skis": "nordica.com", "blizzard skis": "blizzard-tecnica.com",
+    "elan skis": "elanskis.com", "volant": "volantskis.com", "lamar": "lamarskis.com",
+    "dynastar skis": "dynastar.com", "rossignol skis": "rossignol.com", "kastle skis": "kastle-ski.com",
+}
+
+def _get_logo_url(service_name: str) -> Optional[str]:
+    """Return Clearbit logo URL for a service name, or None if not found."""
+    key = service_name.strip().lower()
+    domain = _LOGO_DOMAINS.get(key)
+    if domain:
+        return f"https://logo.clearbit.com/{domain}"
+    return None
+
 
 
 class EmailFetcher:
@@ -338,7 +449,8 @@ class EmailFetcher:
                                     start_date = email_datetime.strftime("%Y-%m-%d")
                                 except Exception: pass
                         if not start_date: start_date = datetime.utcnow().strftime("%Y-%m-%d")
-                        new_sub = Subscription(service_name=classification["service_name"], category=classification["category"], cost=classification["cost"], currency=classification["currency"], billing_cycle=classification["billing_cycle"], status="active", start_date=start_date, notes=f"Plan: {classification.get('plan_name', 'Standard')}", source=email["source"])
+                        icon_url = _get_logo_url(classification["service_name"])
+new_sub = Subscription(service_name=classification["service_name"], category=classification["category"], cost=classification["cost"], currency=classification["currency"], billing_cycle=classification["billing_cycle"], status="active", start_date=start_date, notes=f"Plan: {classification.get('plan_name', 'Standard')}", source=email["source"], icon_url=icon_url)
                         db.add(new_sub)
                         await db.flush()
                         subscription_id, target_sub = new_sub.id, new_sub
