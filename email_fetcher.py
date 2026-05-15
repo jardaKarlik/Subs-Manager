@@ -22,7 +22,6 @@ from database import (
 )
 from sqlalchemy import select, func, insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 
 class EmailFetcher:
@@ -36,7 +35,7 @@ class EmailFetcher:
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Gmail using Composio SDK."""
         try:
-            from composio import Composio, Action
+            from composio import Composio
         except ImportError:
             print("Composio SDK not available, skipping Gmail")
             return []
@@ -47,8 +46,10 @@ class EmailFetcher:
 
             # Fetch emails using Composio
             query = f"after:{self._format_gmail_date(since_days)}"
-            result = composio_client.execute_action(
-                action=Action.GMAIL_FETCH_EMAILS,
+
+            # Use the call_action method instead of execute_action
+            result = composio_client.call_action(
+                action="GMAIL_FETCH_EMAILS",
                 params={
                     "max_results": max_results,
                     "query": query
@@ -61,8 +62,8 @@ class EmailFetcher:
             for msg in messages:
                 message_id = msg.get("id")
                 # Fetch full message
-                detail = composio_client.execute_action(
-                    action=Action.GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID,
+                detail = composio_client.call_action(
+                    action="GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
                     params={"message_id": message_id}
                 )
 
@@ -128,7 +129,7 @@ class EmailFetcher:
     async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Outlook using Composio SDK."""
         try:
-            from composio import Composio, Action
+            from composio import Composio
         except ImportError:
             print("Composio SDK not available, skipping Outlook")
             return []
@@ -141,8 +142,8 @@ class EmailFetcher:
             filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
 
             # Fetch emails using Composio
-            result = composio_client.execute_action(
-                action=Action.OUTLOOK_QUERY_EMAILS,
+            result = composio_client.call_action(
+                action="OUTLOOK_QUERY_EMAILS",
                 params={
                     "limit": max_results,
                     "filter": filter_str
