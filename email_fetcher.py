@@ -59,31 +59,10 @@ class EmailFetcher:
 
                 print(f"Gmail: Found {len(connected_accounts) if connected_accounts else 0} connected accounts total")
 
-                for account in connected_accounts:
-                    # Check account attributes
-                    toolkit = getattr(account, "toolkit", None)
-                    toolkit_slug = None
-                    if toolkit:
-                        toolkit_slug = getattr(toolkit, "slug", None)
-
-                    account_id = getattr(account, "id", None)
-                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
-
-                    print(f"Gmail: Account - id={account_id}, toolkit={toolkit_slug}, email={account_email}")
-
-                    # Match by toolkit slug first, then by email if available
-                    if toolkit_slug == "gmail":
-                        gmail_account = account
-                        print(f"Gmail: Selected Gmail account (id={account_id})")
-                        break
-                    elif user_email and account_email and user_email.lower() in account_email.lower():
-                        gmail_account = account
-                        print(f"Gmail: Selected by email match (id={account_id})")
-                        break
-
-                if not gmail_account:
-                    print(f"Gmail: No Gmail connected account found")
-                    return []
+                # Use the first connected account for Gmail
+                gmail_account = connected_accounts[0]
+                gmail_account_id = getattr(gmail_account, "id", None)
+                print(f"Gmail: Using first connected account (id={gmail_account_id})")
             except Exception as e:
                 import traceback
                 print(f"Gmail: Error getting connected accounts: {e}")
@@ -91,8 +70,7 @@ class EmailFetcher:
                 return []
 
             query = f"after:{self._format_gmail_date(since_days)}"
-            gmail_account_id = getattr(gmail_account, "id", None)
-            print(f"Gmail: Fetching with account_id={gmail_account_id}, max_results={max_results}")
+            print(f"Gmail: Fetching with max_results={max_results}")
 
             # Execute fetch_emails action with connected account
             result = composio.actions.execute(
@@ -229,31 +207,13 @@ class EmailFetcher:
 
                 print(f"Outlook: Found {len(connected_accounts) if connected_accounts else 0} connected accounts total")
 
-                for account in connected_accounts:
-                    # Check account attributes
-                    toolkit = getattr(account, "toolkit", None)
-                    toolkit_slug = None
-                    if toolkit:
-                        toolkit_slug = getattr(toolkit, "slug", None)
-
-                    account_id = getattr(account, "id", None)
-                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
-
-                    print(f"Outlook: Account - id={account_id}, toolkit={toolkit_slug}, email={account_email}")
-
-                    # Match by toolkit slug first, then by email if available
-                    if toolkit_slug == "outlook":
-                        outlook_account = account
-                        print(f"Outlook: Selected Outlook account (id={account_id})")
-                        break
-                    elif user_email and account_email and user_email.lower() in account_email.lower():
-                        outlook_account = account
-                        print(f"Outlook: Selected by email match (id={account_id})")
-                        break
-
-                if not outlook_account:
-                    print(f"Outlook: No Outlook connected account found")
+                # Use the second connected account for Outlook
+                if len(connected_accounts) < 2:
+                    print(f"Outlook: Need 2 connected accounts (Gmail + Outlook), found {len(connected_accounts)}")
                     return []
+                outlook_account = connected_accounts[1]
+                outlook_account_id = getattr(outlook_account, "id", None)
+                print(f"Outlook: Using second connected account (id={outlook_account_id})")
             except Exception as e:
                 import traceback
                 print(f"Outlook: Error getting connected accounts: {e}")
