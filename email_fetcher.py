@@ -33,27 +33,24 @@ class EmailFetcher:
     # ── Gmail via Composio ─────────────────────────────────────────
 
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Gmail using Composio MCP tools."""
+        """Fetch emails from Gmail using Composio SDK."""
         try:
-            from mcp import use_mcp_tool
+            from composio import Composio, Action
         except ImportError:
-            print("Composio MCP tools not available, skipping Gmail")
+            print("Composio SDK not available, skipping Gmail")
             return []
 
         emails = []
         try:
-            # Use GMAIL_FETCH_EMAILS to get message list
-            result = await use_mcp_tool(
-                "COMPOSIO_MULTI_EXECUTE_TOOL",
-                {
-                    "tools": [{
-                        "tool_slug": "GMAIL_FETCH_EMAILS",
-                        "arguments": {
-                            "max_results": max_results,
-                            "query": f"after:{self._format_gmail_date(since_days)}"
-                        }
-                    }],
-                    "sync_response_to_workbench": False
+            composio_client = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
+
+            # Fetch emails using Composio
+            query = f"after:{self._format_gmail_date(since_days)}"
+            result = composio_client.execute_action(
+                action=Action.GMAIL_FETCH_EMAILS,
+                params={
+                    "max_results": max_results,
+                    "query": query
                 }
             )
 
@@ -63,15 +60,9 @@ class EmailFetcher:
             for msg in messages:
                 message_id = msg.get("id")
                 # Fetch full message
-                detail = await use_mcp_tool(
-                    "COMPOSIO_MULTI_EXECUTE_TOOL",
-                    {
-                        "tools": [{
-                            "tool_slug": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
-                            "arguments": {"message_id": message_id}
-                        }],
-                        "sync_response_to_workbench": False
-                    }
+                detail = composio_client.execute_action(
+                    action=Action.GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID,
+                    params={"message_id": message_id}
                 )
 
                 email_data = self._parse_gmail_message(detail, message_id)
@@ -134,27 +125,26 @@ class EmailFetcher:
     # ── Outlook via Composio ───────────────────────────────────────
 
     async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Outlook using Composio MCP tools."""
+        """Fetch emails from Outlook using Composio SDK."""
         try:
-            from mcp import use_mcp_tool
+            from composio import Composio, Action
         except ImportError:
-            print("Composio MCP tools not available, skipping Outlook")
+            print("Composio SDK not available, skipping Outlook")
             return []
 
         emails = []
         try:
-            # Use OUTLOOK_QUERY_EMAILS (SEARCH_MESSAGES doesn't work with @live.com)
-            result = await use_mcp_tool(
-                "COMPOSIO_MULTI_EXECUTE_TOOL",
-                {
-                    "tools": [{
-                        "tool_slug": "OUTLOOK_QUERY_EMAILS",
-                        "arguments": {
-                            "limit": max_results,
-                            "filter": f"receivedDateTime ge {self._format_iso_date(since_days)}"
-                        }
-                    }],
-                    "sync_response_to_workbench": False
+            composio_client = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
+
+            # Format filter for Outlook
+            filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
+
+            # Fetch emails using Composio
+            result = composio_client.execute_action(
+                action=Action.OUTLOOK_QUERY_EMAILS,
+                params={
+                    "limit": max_results,
+                    "filter": filter_str
                 }
             )
 
