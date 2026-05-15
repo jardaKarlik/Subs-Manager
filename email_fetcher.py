@@ -52,24 +52,37 @@ class EmailFetcher:
             composio = Composio(api_key=api_key)
 
             # Get connected accounts to find Gmail account
-            print(f"Gmail: Looking for connected account: {user_email}")
+            print(f"Gmail: Looking for connected Gmail account")
             try:
                 connected_accounts = composio.connected_accounts.get()
                 gmail_account = None
 
+                print(f"Gmail: Found {len(connected_accounts) if connected_accounts else 0} connected accounts total")
+
                 for account in connected_accounts:
-                    # ConnectedAccountModel has attributes, not dict keys
-                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
+                    # Check account attributes
+                    toolkit = getattr(account, "toolkit", None)
+                    toolkit_slug = None
+                    if toolkit:
+                        toolkit_slug = getattr(toolkit, "slug", None)
+
                     account_id = getattr(account, "id", None)
-                    if user_email.lower() in account_email.lower() or account_email.lower() in user_email.lower():
+                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
+
+                    print(f"Gmail: Account - id={account_id}, toolkit={toolkit_slug}, email={account_email}")
+
+                    # Match by toolkit slug first, then by email if available
+                    if toolkit_slug == "gmail":
                         gmail_account = account
-                        print(f"Gmail: Found connected account: {account_email} (id={account_id})")
+                        print(f"Gmail: Selected Gmail account (id={account_id})")
+                        break
+                    elif user_email and account_email and user_email.lower() in account_email.lower():
+                        gmail_account = account
+                        print(f"Gmail: Selected by email match (id={account_id})")
                         break
 
                 if not gmail_account:
-                    print(f"Gmail: No connected account found for {user_email}")
-                    available = [getattr(acc, "email", "unknown") for acc in connected_accounts]
-                    print(f"Gmail: Available accounts: {available}")
+                    print(f"Gmail: No Gmail connected account found")
                     return []
             except Exception as e:
                 import traceback
@@ -209,24 +222,37 @@ class EmailFetcher:
             composio = Composio(api_key=api_key)
 
             # Get connected accounts to find Outlook account
-            print(f"Outlook: Looking for connected account: {user_email}")
+            print(f"Outlook: Looking for connected Outlook account")
             try:
                 connected_accounts = composio.connected_accounts.get()
                 outlook_account = None
 
+                print(f"Outlook: Found {len(connected_accounts) if connected_accounts else 0} connected accounts total")
+
                 for account in connected_accounts:
-                    # ConnectedAccountModel has attributes, not dict keys
-                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
+                    # Check account attributes
+                    toolkit = getattr(account, "toolkit", None)
+                    toolkit_slug = None
+                    if toolkit:
+                        toolkit_slug = getattr(toolkit, "slug", None)
+
                     account_id = getattr(account, "id", None)
-                    if user_email.lower() in account_email.lower() or account_email.lower() in user_email.lower():
+                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
+
+                    print(f"Outlook: Account - id={account_id}, toolkit={toolkit_slug}, email={account_email}")
+
+                    # Match by toolkit slug first, then by email if available
+                    if toolkit_slug == "outlook":
                         outlook_account = account
-                        print(f"Outlook: Found connected account: {account_email} (id={account_id})")
+                        print(f"Outlook: Selected Outlook account (id={account_id})")
+                        break
+                    elif user_email and account_email and user_email.lower() in account_email.lower():
+                        outlook_account = account
+                        print(f"Outlook: Selected by email match (id={account_id})")
                         break
 
                 if not outlook_account:
-                    print(f"Outlook: No connected account found for {user_email}")
-                    available = [getattr(acc, "email", "unknown") for acc in connected_accounts]
-                    print(f"Outlook: Available accounts: {available}")
+                    print(f"Outlook: No Outlook connected account found")
                     return []
             except Exception as e:
                 import traceback
