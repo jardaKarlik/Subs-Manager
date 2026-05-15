@@ -44,18 +44,13 @@ class EmailFetcher:
         try:
             composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
-            # Get Gmail user email
-            gmail_user = os.getenv("GMAIL_USER_1", "")
-            if not gmail_user:
-                print("Gmail: GMAIL_USER_1 not configured")
-                return []
-
-            # Create session for user
-            session = composio.create(user_id=gmail_user)
-
             # Get connected accounts for Gmail
-            connected_accounts = session.connected_accounts.get()
-            print(f"Gmail: Found {len(connected_accounts)} connected accounts")
+            try:
+                connected_accounts = composio.connected_accounts.get()
+                print(f"Gmail: Found {len(connected_accounts)} connected accounts")
+            except Exception as e:
+                print(f"Gmail: Error getting connected accounts: {e}")
+                return []
 
             if not connected_accounts:
                 print("Gmail: No connected accounts found")
@@ -169,18 +164,13 @@ class EmailFetcher:
         try:
             composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
-            # Get Outlook user email (use Gmail user for now as fallback)
-            outlook_user = os.getenv("OUTLOOK_USER_1", os.getenv("GMAIL_USER_1", ""))
-            if not outlook_user:
-                print("Outlook: OUTLOOK_USER_1 not configured")
-                return []
-
-            # Create session for user
-            session = composio.create(user_id=outlook_user)
-
             # Get connected accounts for Outlook
-            connected_accounts = session.connected_accounts.get()
-            print(f"Outlook: Found {len(connected_accounts)} connected accounts")
+            try:
+                connected_accounts = composio.connected_accounts.get()
+                print(f"Outlook: Found {len(connected_accounts)} connected accounts")
+            except Exception as e:
+                print(f"Outlook: Error getting connected accounts: {e}")
+                return []
 
             if not connected_accounts:
                 print("Outlook: No connected accounts found")
