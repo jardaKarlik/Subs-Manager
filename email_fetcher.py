@@ -33,7 +33,7 @@ class EmailFetcher:
     # ── Gmail via Composio ─────────────────────────────────────────
 
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Gmail using Composio SDK."""
+        """Fetch emails from Gmail using Composio SDK v3 API."""
         try:
             from composio import Composio, Action
         except ImportError:
@@ -44,6 +44,34 @@ class EmailFetcher:
         try:
             composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
+            # Get Gmail user email
+            gmail_user = os.getenv("GMAIL_USER_1", "")
+            if not gmail_user:
+                print("Gmail: GMAIL_USER_1 not configured")
+                return []
+
+            # Create session for user
+            session = composio.create(user_id=gmail_user)
+
+            # Get connected accounts for Gmail
+            connected_accounts = session.connected_accounts.get()
+            print(f"Gmail: Found {len(connected_accounts)} connected accounts")
+
+            if not connected_accounts:
+                print("Gmail: No connected accounts found")
+                return []
+
+            # Get Gmail connected account
+            gmail_account = None
+            for account in connected_accounts:
+                if account.get("appId") == "gmail" or account.get("integration") == "gmail":
+                    gmail_account = account
+                    break
+
+            if not gmail_account:
+                print("Gmail: No Gmail connected account found")
+                return []
+
             # Fetch emails using Composio actions.execute()
             query = f"after:{self._format_gmail_date(since_days)}"
 
@@ -52,7 +80,8 @@ class EmailFetcher:
                 params={
                     "max_results": max_results,
                     "query": query
-                }
+                },
+                connected_account=gmail_account.get("id")
             )
 
             messages = result.get("data", {}).get("messages", [])
@@ -63,7 +92,8 @@ class EmailFetcher:
                 # Fetch full message
                 detail = composio.actions.execute(
                     action=Action.GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID,
-                    params={"message_id": message_id}
+                    params={"message_id": message_id},
+                    connected_account=gmail_account.get("id")
                 )
 
                 email_data = self._parse_gmail_message(detail.get("data", {}), message_id)
@@ -128,7 +158,7 @@ class EmailFetcher:
     # ── Outlook via Composio ───────────────────────────────────────
 
     async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Outlook using Composio SDK."""
+        """Fetch emails from Outlook using Composio SDK v3 API."""
         try:
             from composio import Composio, Action
         except ImportError:
@@ -139,6 +169,34 @@ class EmailFetcher:
         try:
             composio = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
 
+            # Get Outlook user email (use Gmail user for now as fallback)
+            outlook_user = os.getenv("OUTLOOK_USER_1", os.getenv("GMAIL_USER_1", ""))
+            if not outlook_user:
+                print("Outlook: OUTLOOK_USER_1 not configured")
+                return []
+
+            # Create session for user
+            session = composio.create(user_id=outlook_user)
+
+            # Get connected accounts for Outlook
+            connected_accounts = session.connected_accounts.get()
+            print(f"Outlook: Found {len(connected_accounts)} connected accounts")
+
+            if not connected_accounts:
+                print("Outlook: No connected accounts found")
+                return []
+
+            # Get Outlook connected account
+            outlook_account = None
+            for account in connected_accounts:
+                if account.get("appId") == "outlook" or account.get("integration") == "outlook":
+                    outlook_account = account
+                    break
+
+            if not outlook_account:
+                print("Outlook: No Outlook connected account found")
+                return []
+
             # Format filter for Outlook
             filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
 
@@ -148,7 +206,8 @@ class EmailFetcher:
                 params={
                     "limit": max_results,
                     "filter": filter_str
-                }
+                },
+                connected_account=outlook_account.get("id")
             )
 
             messages = result.get("data", {}).get("value", [])
