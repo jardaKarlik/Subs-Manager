@@ -58,22 +58,28 @@ class EmailFetcher:
                 gmail_account = None
 
                 for account in connected_accounts:
-                    account_email = account.get("email") or account.get("accountId") or ""
+                    # ConnectedAccountModel has attributes, not dict keys
+                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
+                    account_id = getattr(account, "id", None)
                     if user_email.lower() in account_email.lower() or account_email.lower() in user_email.lower():
                         gmail_account = account
-                        print(f"Gmail: Found connected account: {account.get('email')} (id={account.get('id')})")
+                        print(f"Gmail: Found connected account: {account_email} (id={account_id})")
                         break
 
                 if not gmail_account:
                     print(f"Gmail: No connected account found for {user_email}")
-                    print(f"Gmail: Available accounts: {[acc.get('email') for acc in connected_accounts]}")
+                    available = [getattr(acc, "email", "unknown") for acc in connected_accounts]
+                    print(f"Gmail: Available accounts: {available}")
                     return []
             except Exception as e:
+                import traceback
                 print(f"Gmail: Error getting connected accounts: {e}")
+                print(traceback.format_exc())
                 return []
 
             query = f"after:{self._format_gmail_date(since_days)}"
-            print(f"Gmail: Fetching with account_id={gmail_account.get('id')}, max_results={max_results}")
+            gmail_account_id = getattr(gmail_account, "id", None)
+            print(f"Gmail: Fetching with account_id={gmail_account_id}, max_results={max_results}")
 
             # Execute fetch_emails action with connected account
             result = composio.actions.execute(
@@ -83,7 +89,7 @@ class EmailFetcher:
                     "max_results": max_results,
                     "include_payload": True
                 },
-                connected_account=gmail_account.get("id")
+                connected_account=gmail_account_id
             )
 
             print(f"Gmail: Raw result - successful={result.get('successful')}, status={result.get('status')}")
@@ -209,18 +215,23 @@ class EmailFetcher:
                 outlook_account = None
 
                 for account in connected_accounts:
-                    account_email = account.get("email") or account.get("accountId") or ""
+                    # ConnectedAccountModel has attributes, not dict keys
+                    account_email = getattr(account, "email", None) or getattr(account, "accountId", None) or ""
+                    account_id = getattr(account, "id", None)
                     if user_email.lower() in account_email.lower() or account_email.lower() in user_email.lower():
                         outlook_account = account
-                        print(f"Outlook: Found connected account: {account.get('email')} (id={account.get('id')})")
+                        print(f"Outlook: Found connected account: {account_email} (id={account_id})")
                         break
 
                 if not outlook_account:
                     print(f"Outlook: No connected account found for {user_email}")
-                    print(f"Outlook: Available accounts: {[acc.get('email') for acc in connected_accounts]}")
+                    available = [getattr(acc, "email", "unknown") for acc in connected_accounts]
+                    print(f"Outlook: Available accounts: {available}")
                     return []
             except Exception as e:
+                import traceback
                 print(f"Outlook: Error getting connected accounts: {e}")
+                print(traceback.format_exc())
                 return []
 
             # Build date range filter: last N days
@@ -229,7 +240,8 @@ class EmailFetcher:
             # Select fields to retrieve
             select_fields = "subject,from,sender,bodyPreview,body,receivedDateTime,hasAttachments,isRead,categories"
 
-            print(f"Outlook: Fetching with account_id={outlook_account.get('id')}, date_range={since_days}d, max_results={max_results}")
+            outlook_account_id = getattr(outlook_account, "id", None)
+            print(f"Outlook: Fetching with account_id={outlook_account_id}, date_range={since_days}d, max_results={max_results}")
 
             # Execute outlook search_messages action with connected account (mailbox-wide)
             result = composio.actions.execute(
@@ -239,7 +251,7 @@ class EmailFetcher:
                     "filter": filter_str,
                     "select": select_fields
                 },
-                connected_account=outlook_account.get("id")
+                connected_account=outlook_account_id
             )
 
             print(f"Outlook: Raw result - successful={result.get('successful')}, status={result.get('status')}")
