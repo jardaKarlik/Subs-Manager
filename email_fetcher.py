@@ -450,7 +450,7 @@ class EmailFetcher:
                                 except Exception: pass
                         if not start_date: start_date = datetime.utcnow().strftime("%Y-%m-%d")
                         icon_url = _get_logo_url(classification["service_name"])
-new_sub = Subscription(service_name=classification["service_name"], category=classification["category"], cost=classification["cost"], currency=classification["currency"], billing_cycle=classification["billing_cycle"], status="active", start_date=start_date, notes=f"Plan: {classification.get('plan_name', 'Standard')}", source=email["source"], icon_url=icon_url)
+                        new_sub = Subscription(service_name=classification["service_name"], category=classification["category"], cost=classification["cost"], currency=classification["currency"], billing_cycle=classification["billing_cycle"], status="active", start_date=start_date, notes=f"Plan: {classification.get('plan_name', 'Standard')}", source=email["source"], icon_url=icon_url)
                         db.add(new_sub)
                         await db.flush()
                         subscription_id, target_sub = new_sub.id, new_sub
