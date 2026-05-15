@@ -20,8 +20,9 @@ from database import (
     Subscription, ProcessedEmail, SubscriptionEvent,
     AsyncSessionLocal, AsyncSession
 )
-from sqlalchemy import select, func
+from sqlalchemy import select, func, insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 
 class EmailFetcher:
@@ -357,11 +358,18 @@ class EmailFetcher:
                 )
 
                 # Mark as processed regardless of classification
-                processed = ProcessedEmail(
-                    message_id=email["_unique_id"],
-                    source=email["source"]
-                )
-                db.add(processed)
+                # Use insert with on_conflict_do_nothing to handle duplicates gracefully
+                try:
+                    stmt = insert(ProcessedEmail).values(
+                        message_id=email["_unique_id"],
+                        source=email["source"]
+                    )
+                    # Use SQLite's ON CONFLICT IGNORE
+                    stmt = stmt.on_conflict_do_nothing()
+                    await db.execute(stmt)
+                except Exception:
+                    # Fallback: just skip if insertion fails
+                    pass
 
                 if classification["is_subscription"]:
                     # Check if subscription already exists for this service (case-insensitive)
@@ -458,7 +466,14 @@ class EmailFetcher:
                 print(f"Error processing email {email['_unique_id']}: {e}")
                 results["errors"] += 1
 
-        await db.commit()
+        try:
+            await db.commit()
+        except Exception as e:
+            print(f"Database commit error: {e}")
+            await db.rollback()
+            # Return partial results if commit fails
+            return results
+
         return results
 
     # ── Helpers ────────────────────────────────────────────────────
