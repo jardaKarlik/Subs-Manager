@@ -695,7 +695,7 @@ async def webhook_status(db: AsyncSession = Depends(get_db)):
             monthly_cost += cost / 12
             
     # Get processed emails count
-    email_query = select(func.count(ProcessedEmail.id))
+    email_query = select(func.count(ProcessedEmail.message_id))
     email_result = await db.execute(email_query)
     total_emails = email_result.scalar() or 0
     
