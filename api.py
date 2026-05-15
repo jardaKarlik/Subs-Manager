@@ -45,13 +45,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount frontend static files
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-frontend_dir = Path(__file__).parent / "frontend"
-if frontend_dir.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
-
 
 # ============================================================================
 # Pydantic Models
@@ -711,6 +704,15 @@ async def serve_spa(full_path: str):
     if index_path.exists():
         return FileResponse(index_path)
     return {"error": "Application not found"}
+
+
+# ============================================================================
+# Mount Frontend Static Files (AFTER all API routes to avoid route capture)
+# ============================================================================
+
+frontend_dir = Path(__file__).parent / "frontend"
+if frontend_dir.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
 
 if __name__ == "__main__":
