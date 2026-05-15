@@ -40,14 +40,14 @@ class EmailFetcher:
         self.classifier = EmailClassifier()
         self._toolset = None  # lazy-init ComposioToolSet
 
-    # ── Composio v2 SDK setup ──────────────────────────────────────
+    # ── Composio SDK setup (v2 session-based API) ─────────────────
 
-    def _get_toolset(self):
+    def _get_composio(self):
         """
-        Lazy-initialise and return a ComposioToolSet instance.
+        Lazy-initialise and return a Composio v2 instance.
 
-        Uses the v2 SDK (composio >= 0.13.0). Falls back to the v1 SDK
-        if ComposioToolSet is not available.
+        Uses composio.Composio (v2 SDK, >= 0.13.0 / >= 1.0.0).
+        Falls back to the old v1 SDK if v2 is not available.
         """
         if self._toolset is not None:
             return self._toolset
@@ -57,30 +57,30 @@ class EmailFetcher:
             print("Composio: Missing COMPOSIO_API_KEY")
             return None
 
-        entity_id = os.getenv("COMPOSIO_USER_ID", "default")
-
         try:
-            from composio import ComposioToolSet
-            self._toolset = ComposioToolSet(
-                api_key=api_key,
-                entity_id=entity_id,
-            )
-            print(f"ComposioToolSet initialised (SDK v2, entity={entity_id})")
+            import composio
+            self._toolset = composio.Composio(api_key=api_key)
+            print(f"Composio v2 client initialised (SDK {getattr(composio, '__version__', '?')})")
             return self._toolset
         except ImportError:
             print("Composio v2 SDK not available, trying v1 fallback")
             return None
         except Exception as e:
-            print(f"ComposioToolSet init failed: {e}")
+            print(f"Composio v2 init failed: {e}")
             return None
 
-    # ── V1 fallback (compat with old SDK) ──────────────────────────
+    # ── V1 fallback (compat with old SDK 0.7.x) ───────────────────
 
     def _get_v1_client(self):
         """Fallback: initialise old Composio client (v0.7.x / v1 API)."""
         api_key = os.getenv("COMPOSIO_API_KEY")
         if not api_key:
             return None
+        try:
+            from composio.client import Composio as ClientComposio
+            return ClientComposio(api_key=api_key)
+        except ImportError:
+            pass
         try:
             from composio import Composio
             return Composio(api_key=api_key)
@@ -92,69 +92,65 @@ class EmailFetcher:
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Gmail using Composio with OAuth account."""
         emails = []
-
-        try:
-            from composio import Action
-        except ImportError:
-            print("Gmail: composio package not installed")
-            return []
-
         gmail_account = os.getenv("GMAIL_ACCOUNT_ID")
         if not gmail_account:
             print("Gmail: Missing GMAIL_ACCOUNT_ID in .env")
             return []
 
-        # ── Try v2 SDK (ComposioToolSet) ───────────────────────────
-        toolset = self._get_toolset()
-        if toolset:
+        query = f"after:{self._format_gmail_date(since_days)}"
+
+        # ── Try v2 SDK (composio.Composio.tools.execute) ────────────
+        composio_client = self._get_composio()
+        if composio_client:
             try:
-                query = f"after:{self._format_gmail_date(since_days)}"
                 print(f"Gmail [v2]: account={gmail_account}, query='{query}', max_results={max_results}")
 
-                result = toolset.execute_action(
-                    action=Action.GMAIL_FETCH_EMAILS,
-                    params={
+                result = composio_client.tools.execute(
+                    slug="GMAIL_FETCH_EMAILS",
+                    arguments={
                         "query": query,
                         "max_results": max_results,
                         "include_payload": True,
                     },
                     connected_account_id=gmail_account,
+                    entity_id=os.getenv("COMPOSIO_USER_ID", "default"),
                 )
 
-                print(f"Gmail [v2]: result keys={list(result.keys())}")
-                emails = self._parse_gmail_v2_result(result)
+                print(f"Gmail [v2]: result type={type(result).__name__}")
+                # Parse result - v2 returns ToolExecutionResponse with data attribute
+                if hasattr(result, 'data'):
+                    emails = self._parse_gmail_v2_result({"data": result.data})
+                elif isinstance(result, dict):
+                    emails = self._parse_gmail_v2_result(result)
+                else:
+                    emails = self._parse_gmail_v2_result({"data": {}})
+
                 if emails:
                     return emails
-                # If v2 returned nothing useful, fall through to v1
-                print("Gmail [v2]: no emails extracted, falling back to v1")
+                print("Gmail [v2]: no emails extracted, trying v1 fallback")
             except Exception as e:
                 import traceback
                 print(f"Gmail [v2] error: {e}")
                 print(traceback.format_exc())
-                # Fall through to v1
 
         # ── V1 fallback ────────────────────────────────────────────
+        try:
+            from composio import Action
+        except ImportError:
+            return []
+
         client = self._get_v1_client()
         if not client:
-            print("Gmail: no Composio client available")
+            print("Gmail: no v1 client available")
             return []
 
         try:
-            query = f"after:{self._format_gmail_date(since_days)}"
             print(f"Gmail [v1]: account={gmail_account}, query='{query}', max_results={max_results}")
-
             result = client.actions.execute(
                 action=Action.GMAIL_FETCH_EMAILS,
-                params={
-                    "query": query,
-                    "max_results": max_results,
-                    "include_payload": True,
-                },
+                params={"query": query, "max_results": max_results, "include_payload": True},
                 connected_account=gmail_account,
             )
-
-            print(f"Gmail [v1]: successful={result.get('successful')}, status={result.get('status')}")
-
             if result.get("successful") or result.get("status") == "success":
                 messages = result.get("data", {}).get("messages", [])
                 print(f"Gmail [v1]: found {len(messages)} messages")
@@ -163,9 +159,7 @@ class EmailFetcher:
                     if email_data:
                         emails.append(email_data)
             else:
-                error_msg = result.get("error") or result.get("message", "Unknown error")
-                print(f"Gmail [v1]: Request failed - {error_msg}")
-
+                print(f"Gmail [v1]: failed - {result.get('error', 'unknown')}")
         except Exception as e:
             import traceback
             print(f"Gmail [v1] error: {type(e).__name__}: {e}")
@@ -227,77 +221,65 @@ class EmailFetcher:
     async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails from Outlook using Composio with OAuth account."""
         emails = []
-
-        try:
-            from composio import Action
-        except ImportError:
-            print("Outlook: composio package not installed")
-            return []
-
         outlook_account = os.getenv("OUTLOOK_ACCOUNT_ID")
         if not outlook_account:
             print("Outlook: Missing OUTLOOK_ACCOUNT_ID in .env")
             return []
 
-        # ── Try v2 SDK (ComposioToolSet) ───────────────────────────
-        toolset = self._get_toolset()
-        if toolset:
-            try:
-                user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
-                filter_str = f"receivedDateTime -{since_days}d"
-                select_fields = ["subject", "from", "body", "receivedDateTime",
-                                 "bodyPreview", "hasAttachments", "isRead"]
+        user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
+        filter_str = f"receivedDateTime -{since_days}d"
+        select_fields = ["subject", "from", "body", "receivedDateTime",
+                         "bodyPreview", "hasAttachments", "isRead"]
 
+        # ── Try v2 SDK (composio.Composio.tools.execute) ────────────
+        composio_client = self._get_composio()
+        if composio_client:
+            try:
                 print(f"Outlook [v2]: account={outlook_account}, filter='{filter_str}', max_results={max_results}")
 
-                result = toolset.execute_action(
-                    action=Action.OUTLOOK_LIST_MESSAGES,
-                    params={
+                result = composio_client.tools.execute(
+                    slug="OUTLOOK_LIST_MESSAGES",
+                    arguments={
                         "user_id": user_email,
                         "select": select_fields,
                         "filter": filter_str,
                         "limit": max_results,
                     },
                     connected_account_id=outlook_account,
+                    entity_id=os.getenv("COMPOSIO_USER_ID", "default"),
                 )
 
-                print(f"Outlook [v2]: result keys={list(result.keys())}")
-                emails = self._parse_outlook_v2_result(result)
+                print(f"Outlook [v2]: result type={type(result).__name__}")
+                if hasattr(result, 'data'):
+                    emails = self._parse_outlook_v2_result({"data": result.data})
+                elif isinstance(result, dict):
+                    emails = self._parse_outlook_v2_result(result)
                 if emails:
                     return emails
-                print("Outlook [v2]: no emails extracted, falling back to v1")
+                print("Outlook [v2]: no emails extracted, trying v1 fallback")
             except Exception as e:
                 import traceback
                 print(f"Outlook [v2] error: {e}")
                 print(traceback.format_exc())
 
         # ── V1 fallback ────────────────────────────────────────────
+        try:
+            from composio import Action
+        except ImportError:
+            return []
+
         client = self._get_v1_client()
         if not client:
-            print("Outlook: no Composio client available")
+            print("Outlook: no v1 client available")
             return []
 
         try:
-            user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
-            filter_str = f"receivedDateTime -{since_days}d"
-            select_fields = ["subject", "from", "body", "receivedDateTime",
-                             "bodyPreview", "hasAttachments", "isRead"]
-
             print(f"Outlook [v1]: account={outlook_account}, filter='{filter_str}', max_results={max_results}")
-
             result = client.actions.execute(
                 action=Action.OUTLOOK_LIST_MESSAGES,
-                params={
-                    "user_id": user_email,
-                    "select": select_fields,
-                    "filter": filter_str,
-                    "limit": max_results,
-                },
+                params={"user_id": user_email, "select": select_fields, "filter": filter_str, "limit": max_results},
                 connected_account=outlook_account,
             )
-
-            print(f"Outlook [v1]: successful={result.get('successful')}, status={result.get('status')}")
-
             if result.get("successful") or result.get("status") == "success":
                 messages = result.get("data", {}).get("value", [])
                 print(f"Outlook [v1]: found {len(messages)} messages")
@@ -306,9 +288,7 @@ class EmailFetcher:
                     if email_data:
                         emails.append(email_data)
             else:
-                error_msg = result.get("error") or result.get("message", "Unknown error")
-                print(f"Outlook [v1]: Request failed - {error_msg}")
-
+                print(f"Outlook [v1]: failed - {result.get('error', 'unknown')}")
         except Exception as e:
             import traceback
             print(f"Outlook [v1] error: {type(e).__name__}: {e}")
