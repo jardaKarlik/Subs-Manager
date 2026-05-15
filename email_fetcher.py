@@ -314,11 +314,8 @@ class EmailFetcher:
 
             try:
                 classification = self.classifier.classify(email["subject"], email["sender"], email["body"])
-                try:
-                    stmt = insert(ProcessedEmail).values(message_id=email["_unique_id"], source=email["source"])
-                    stmt = stmt.on_conflict_do_nothing()
-                    await db.execute(stmt)
-                except Exception: pass
+                # Record as processed (SQLite-safe; dedup already confirmed above)
+                db.add(ProcessedEmail(message_id=email["_unique_id"], source=email["source"]))
 
                 if classification["is_subscription"]:
                     norm_name = classification["service_name"].strip()
