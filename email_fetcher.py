@@ -153,7 +153,7 @@ class EmailFetcher:
             # Fetch emails using Composio actions.execute()
             # Try without specifying connected_account first
             result = composio.actions.execute(
-                action=Action.OUTLOOK_QUERY_EMAILS,
+                action=Action.OUTLOOK_LIST_MESSAGES,
                 params={
                     "limit": max_results,
                     "filter": filter_str
