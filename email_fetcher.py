@@ -2,15 +2,19 @@
 Email Fetcher for Subscription Manager
 Fetches emails from Gmail (via Composio), Outlook (via Composio), and IMAP.
 Integrates with the EmailClassifier for subscription detection.
+
+Uses Composio SDK v2 (ComposioToolSet) for OAuth email fetching.
 """
 
 import os
 import re
+import ssl
+import email.utils
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
-from sqlalchemy import func
 
-import email.utils
+from sqlalchemy import select, func, insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from email.parser import Parser
 from email.header import decode_header
@@ -18,10 +22,15 @@ from email.header import decode_header
 from email_parser import EmailClassifier, ACCOUNT_CREATION_KEYWORDS
 from database import (
     Subscription, ProcessedEmail, SubscriptionEvent,
-    AsyncSessionLocal, AsyncSession
+    AsyncSessionLocal
 )
-from sqlalchemy import select, func, insert
-from sqlalchemy.ext.asyncio import AsyncSession
+
+
+# ── Optional SSL hardening ────────────────────────────────────────────────
+# Set IMAP_VERIFY_SSL=false in .env to disable cert verification for IMAP.
+# Composio SDK calls respect standard SSL context and do NOT need monkey-patching.
+
+IMAP_VERIFY_SSL = os.getenv("IMAP_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
 
 class EmailFetcher:
@@ -29,80 +38,160 @@ class EmailFetcher:
 
     def __init__(self):
         self.classifier = EmailClassifier()
+        self._toolset = None  # lazy-init ComposioToolSet
 
-    # ── Gmail via Composio ─────────────────────────────────────────
+    # ── Composio v2 SDK setup ──────────────────────────────────────
+
+    def _get_toolset(self):
+        """
+        Lazy-initialise and return a ComposioToolSet instance.
+
+        Uses the v2 SDK (composio >= 0.13.0). Falls back to the v1 SDK
+        if ComposioToolSet is not available.
+        """
+        if self._toolset is not None:
+            return self._toolset
+
+        api_key = os.getenv("COMPOSIO_API_KEY")
+        if not api_key:
+            print("Composio: Missing COMPOSIO_API_KEY")
+            return None
+
+        entity_id = os.getenv("COMPOSIO_USER_ID", "default")
+
+        try:
+            from composio import ComposioToolSet
+            self._toolset = ComposioToolSet(
+                api_key=api_key,
+                entity_id=entity_id,
+            )
+            print(f"ComposioToolSet initialised (SDK v2, entity={entity_id})")
+            return self._toolset
+        except ImportError:
+            print("Composio v2 SDK not available, trying v1 fallback")
+            return None
+        except Exception as e:
+            print(f"ComposioToolSet init failed: {e}")
+            return None
+
+    # ── V1 fallback (compat with old SDK) ──────────────────────────
+
+    def _get_v1_client(self):
+        """Fallback: initialise old Composio client (v0.7.x / v1 API)."""
+        api_key = os.getenv("COMPOSIO_API_KEY")
+        if not api_key:
+            return None
+        try:
+            from composio import Composio
+            return Composio(api_key=api_key)
+        except Exception:
+            return None
+
+    # ── Gmail via Composio OAuth ──────────────────────────────────
 
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Gmail using Composio SDK."""
+        """Fetch emails from Gmail using Composio with OAuth account."""
+        emails = []
+
         try:
-            from composio import Composio, Action
+            from composio import Action
         except ImportError:
-            print("Composio SDK not available, skipping Gmail")
+            print("Gmail: composio package not installed")
             return []
 
-        emails = []
-        try:
-            api_key = os.getenv("COMPOSIO_API_KEY")
-            user_email = os.getenv("GMAIL_USER_EMAIL", "")
+        gmail_account = os.getenv("GMAIL_ACCOUNT_ID")
+        if not gmail_account:
+            print("Gmail: Missing GMAIL_ACCOUNT_ID in .env")
+            return []
 
-            if not api_key:
-                print("Gmail: Missing COMPOSIO_API_KEY")
-                return []
-
-            composio = Composio(api_key=api_key)
-
-            # Get connected accounts to find Gmail account
-            print(f"Gmail: Looking for connected Gmail account")
+        # ── Try v2 SDK (ComposioToolSet) ───────────────────────────
+        toolset = self._get_toolset()
+        if toolset:
             try:
-                connected_accounts = composio.connected_accounts.get()
-                gmail_account = None
+                query = f"after:{self._format_gmail_date(since_days)}"
+                print(f"Gmail [v2]: account={gmail_account}, query='{query}', max_results={max_results}")
 
-                print(f"Gmail: Found {len(connected_accounts) if connected_accounts else 0} connected accounts total")
+                result = toolset.execute_action(
+                    action=Action.GMAIL_FETCH_EMAILS,
+                    params={
+                        "query": query,
+                        "max_results": max_results,
+                        "include_payload": True,
+                    },
+                    connected_account_id=gmail_account,
+                )
 
-                # Use the first connected account for Gmail
-                gmail_account = connected_accounts[0]
-                gmail_account_id = getattr(gmail_account, "id", None)
-                print(f"Gmail: Using first connected account (id={gmail_account_id})")
+                print(f"Gmail [v2]: result keys={list(result.keys())}")
+                emails = self._parse_gmail_v2_result(result)
+                if emails:
+                    return emails
+                # If v2 returned nothing useful, fall through to v1
+                print("Gmail [v2]: no emails extracted, falling back to v1")
             except Exception as e:
                 import traceback
-                print(f"Gmail: Error getting connected accounts: {e}")
+                print(f"Gmail [v2] error: {e}")
                 print(traceback.format_exc())
-                return []
+                # Fall through to v1
 
+        # ── V1 fallback ────────────────────────────────────────────
+        client = self._get_v1_client()
+        if not client:
+            print("Gmail: no Composio client available")
+            return []
+
+        try:
             query = f"after:{self._format_gmail_date(since_days)}"
-            print(f"Gmail: Fetching with max_results={max_results}")
+            print(f"Gmail [v1]: account={gmail_account}, query='{query}', max_results={max_results}")
 
-            # Execute fetch_emails action with connected account
-            result = composio.actions.execute(
+            result = client.actions.execute(
                 action=Action.GMAIL_FETCH_EMAILS,
                 params={
                     "query": query,
                     "max_results": max_results,
-                    "include_payload": True
+                    "include_payload": True,
                 },
-                connected_account=gmail_account_id
+                connected_account=gmail_account,
             )
 
-            print(f"Gmail: Raw result - successful={result.get('successful')}, status={result.get('status')}")
+            print(f"Gmail [v1]: successful={result.get('successful')}, status={result.get('status')}")
 
-            # Parse response - check if successful
             if result.get("successful") or result.get("status") == "success":
                 messages = result.get("data", {}).get("messages", [])
-                print(f"Gmail: Found {len(messages)} messages")
-
+                print(f"Gmail [v1]: found {len(messages)} messages")
                 for msg in messages:
                     email_data = self._parse_gmail_message_composio(msg)
                     if email_data:
                         emails.append(email_data)
             else:
                 error_msg = result.get("error") or result.get("message", "Unknown error")
-                print(f"Gmail: Request failed - {error_msg}")
+                print(f"Gmail [v1]: Request failed - {error_msg}")
 
         except Exception as e:
             import traceback
-            print(f"Gmail fetch error: {type(e).__name__}: {e}")
-            print(f"Traceback: {traceback.format_exc()}")
+            print(f"Gmail [v1] error: {type(e).__name__}: {e}")
+            print(traceback.format_exc())
 
+        return emails
+
+    def _parse_gmail_v2_result(self, result: dict) -> List[Dict]:
+        """Parse ComposioToolSet Gmail response."""
+        emails = []
+        # v2 SDK returns data in various shapes; try common patterns
+        data = result.get("data") or result
+        messages = data.get("messages") or data.get("value") or data.get("result") or []
+
+        if isinstance(messages, list):
+            for msg in messages:
+                email_data = self._parse_gmail_message_composio(msg)
+                if email_data:
+                    emails.append(email_data)
+        elif isinstance(messages, dict):
+            # Single message result
+            email_data = self._parse_gmail_message_composio(messages)
+            if email_data:
+                emails.append(email_data)
+
+        print(f"Gmail [v2]: parsed {len(emails)} emails")
         return emails
 
     def _parse_gmail_message_composio(self, msg: Dict) -> Optional[Dict]:
@@ -110,15 +199,18 @@ class EmailFetcher:
         if not msg:
             return None
 
-        # Extract message ID and preview body from Composio response
-        message_id = msg.get("messageId", "")
+        message_id = msg.get("messageId") or msg.get("id", "")
         subject = msg.get("subject", "")
-        sender = msg.get("sender", "")
-        timestamp = msg.get("messageTimestamp", "")
+        sender = msg.get("sender") or msg.get("from", {}).get("email", "")
+        timestamp = msg.get("messageTimestamp") or msg.get("date", "") or msg.get("receivedDateTime", "")
 
-        # Body can be in preview.body
+        # Body can be in preview.body or body.content
         preview = msg.get("preview", {})
-        body = preview.get("body", "") if isinstance(preview, dict) else ""
+        body = ""
+        if isinstance(preview, dict):
+            body = preview.get("body") or preview.get("content", "")
+        if not body:
+            body = msg.get("body", {}).get("content", "")
 
         return {
             "message_id": message_id,
@@ -127,140 +219,120 @@ class EmailFetcher:
             "sender": sender,
             "date": timestamp,
             "body": body,
-            "raw": msg
+            "raw": msg,
         }
 
-    def _parse_gmail_message(self, detail: Dict, message_id: str) -> Optional[Dict]:
-        """Parse Gmail API response into standard email dict. [DEPRECATED - use _parse_gmail_message_composio]"""
-        data = detail.get("data", {})
-        if not data:
-            return None
-
-        payload = data.get("payload", {})
-        headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
-
-        # Extract body
-        body = self._extract_gmail_body(payload)
-
-        return {
-            "message_id": message_id,
-            "source": "gmail",
-            "subject": headers.get("Subject", ""),
-            "sender": headers.get("From", ""),
-            "date": headers.get("Date", ""),
-            "body": body,
-            "raw": data
-        }
-
-    def _extract_gmail_body(self, payload: Dict) -> str:
-        """Extract text body from Gmail message payload."""
-        mime_type = payload.get("mimeType", "")
-
-        if mime_type == "text/plain":
-            import base64
-            data = payload.get("body", {}).get("data", "")
-            if data:
-                return base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-
-        elif mime_type == "text/html":
-            import base64
-            data = payload.get("body", {}).get("data", "")
-            if data:
-                html = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-                return self._strip_html(html)
-
-        elif mime_type.startswith("multipart/"):
-            parts = payload.get("parts", [])
-            for part in parts:
-                result = self._extract_gmail_body(part)
-                if result:
-                    return result
-
-        return ""
-
-    # ── Outlook via Composio ───────────────────────────────────────
+    # ── Outlook via Composio OAuth ────────────────────────────────
 
     async def fetch_outlook(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
-        """Fetch emails from Outlook using Composio SDK."""
+        """Fetch emails from Outlook using Composio with OAuth account."""
+        emails = []
+
         try:
-            from composio import Composio, Action
+            from composio import Action
         except ImportError:
-            print("Composio SDK not available, skipping Outlook")
+            print("Outlook: composio package not installed")
             return []
 
-        emails = []
-        try:
-            api_key = os.getenv("COMPOSIO_API_KEY")
-            user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
+        outlook_account = os.getenv("OUTLOOK_ACCOUNT_ID")
+        if not outlook_account:
+            print("Outlook: Missing OUTLOOK_ACCOUNT_ID in .env")
+            return []
 
-            if not api_key:
-                print("Outlook: Missing COMPOSIO_API_KEY")
-                return []
-
-            composio = Composio(api_key=api_key)
-
-            # Get connected accounts to find Outlook account
-            print(f"Outlook: Looking for connected Outlook account")
+        # ── Try v2 SDK (ComposioToolSet) ───────────────────────────
+        toolset = self._get_toolset()
+        if toolset:
             try:
-                connected_accounts = composio.connected_accounts.get()
-                outlook_account = None
+                user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
+                filter_str = f"receivedDateTime -{since_days}d"
+                select_fields = ["subject", "from", "body", "receivedDateTime",
+                                 "bodyPreview", "hasAttachments", "isRead"]
 
-                print(f"Outlook: Found {len(connected_accounts) if connected_accounts else 0} connected accounts total")
+                print(f"Outlook [v2]: account={outlook_account}, filter='{filter_str}', max_results={max_results}")
 
-                # Use the second connected account for Outlook
-                if len(connected_accounts) < 2:
-                    print(f"Outlook: Need 2 connected accounts (Gmail + Outlook), found {len(connected_accounts)}")
-                    return []
-                outlook_account = connected_accounts[1]
-                outlook_account_id = getattr(outlook_account, "id", None)
-                print(f"Outlook: Using second connected account (id={outlook_account_id})")
+                result = toolset.execute_action(
+                    action=Action.OUTLOOK_LIST_MESSAGES,
+                    params={
+                        "user_id": user_email,
+                        "select": select_fields,
+                        "filter": filter_str,
+                        "limit": max_results,
+                    },
+                    connected_account_id=outlook_account,
+                )
+
+                print(f"Outlook [v2]: result keys={list(result.keys())}")
+                emails = self._parse_outlook_v2_result(result)
+                if emails:
+                    return emails
+                print("Outlook [v2]: no emails extracted, falling back to v1")
             except Exception as e:
                 import traceback
-                print(f"Outlook: Error getting connected accounts: {e}")
+                print(f"Outlook [v2] error: {e}")
                 print(traceback.format_exc())
-                return []
 
-            # Build date range filter: last N days
-            filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
+        # ── V1 fallback ────────────────────────────────────────────
+        client = self._get_v1_client()
+        if not client:
+            print("Outlook: no Composio client available")
+            return []
 
-            # Select fields to retrieve
-            select_fields = "subject,from,sender,bodyPreview,body,receivedDateTime,hasAttachments,isRead,categories"
+        try:
+            user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
+            filter_str = f"receivedDateTime -{since_days}d"
+            select_fields = ["subject", "from", "body", "receivedDateTime",
+                             "bodyPreview", "hasAttachments", "isRead"]
 
-            outlook_account_id = getattr(outlook_account, "id", None)
-            print(f"Outlook: Fetching with account_id={outlook_account_id}, date_range={since_days}d, max_results={max_results}")
+            print(f"Outlook [v1]: account={outlook_account}, filter='{filter_str}', max_results={max_results}")
 
-            # Execute outlook search_messages action with connected account (mailbox-wide)
-            result = composio.actions.execute(
-                action=Action.OUTLOOK_SEARCH_MESSAGES,
+            result = client.actions.execute(
+                action=Action.OUTLOOK_LIST_MESSAGES,
                 params={
                     "user_id": user_email,
+                    "select": select_fields,
                     "filter": filter_str,
-                    "select": select_fields
+                    "limit": max_results,
                 },
-                connected_account=outlook_account_id
+                connected_account=outlook_account,
             )
 
-            print(f"Outlook: Raw result - successful={result.get('successful')}, status={result.get('status')}")
+            print(f"Outlook [v1]: successful={result.get('successful')}, status={result.get('status')}")
 
-            # Parse response - check if successful
             if result.get("successful") or result.get("status") == "success":
-                # Outlook returns messages in 'data.value' (not 'data.messages')
                 messages = result.get("data", {}).get("value", [])
-                print(f"Outlook: Found {len(messages)} messages")
-
+                print(f"Outlook [v1]: found {len(messages)} messages")
                 for msg in messages:
                     email_data = self._parse_outlook_message_composio(msg)
                     if email_data:
                         emails.append(email_data)
             else:
                 error_msg = result.get("error") or result.get("message", "Unknown error")
-                print(f"Outlook: Request failed - {error_msg}")
+                print(f"Outlook [v1]: Request failed - {error_msg}")
 
         except Exception as e:
             import traceback
-            print(f"Outlook fetch error: {type(e).__name__}: {e}")
-            print(f"Traceback: {traceback.format_exc()}")
+            print(f"Outlook [v1] error: {type(e).__name__}: {e}")
+            print(traceback.format_exc())
 
+        return emails
+
+    def _parse_outlook_v2_result(self, result: dict) -> List[Dict]:
+        """Parse ComposioToolSet Outlook response."""
+        emails = []
+        data = result.get("data") or result
+        messages = data.get("value") or data.get("messages") or data.get("result") or []
+
+        if isinstance(messages, list):
+            for msg in messages:
+                email_data = self._parse_outlook_message_composio(msg)
+                if email_data:
+                    emails.append(email_data)
+        elif isinstance(messages, dict):
+            email_data = self._parse_outlook_message_composio(messages)
+            if email_data:
+                emails.append(email_data)
+
+        print(f"Outlook [v2]: parsed {len(emails)} emails")
         return emails
 
     def _parse_outlook_message_composio(self, msg: Dict) -> Optional[Dict]:
@@ -268,18 +340,15 @@ class EmailFetcher:
         if not msg:
             return None
 
-        # Extract fields from Composio Outlook response
         message_id = msg.get("id", "")
         subject = msg.get("subject", "")
 
-        # Sender can be in 'from' field (dict with emailAddress)
         from_field = msg.get("from", {})
         if isinstance(from_field, dict):
             sender = from_field.get("emailAddress", {}).get("address", "")
         else:
             sender = str(from_field)
 
-        # Body parsing
         body_text = msg.get("body", {}).get("content", "")
         if msg.get("body", {}).get("contentType") == "html":
             body_text = self._strip_html(body_text)
@@ -293,35 +362,14 @@ class EmailFetcher:
             "sender": sender,
             "date": timestamp,
             "body": body_text,
-            "raw": msg
+            "raw": msg,
         }
 
-    def _parse_outlook_message(self, msg: Dict) -> Optional[Dict]:
-        """Parse Outlook API response into standard email dict. [DEPRECATED - use _parse_outlook_message_composio]"""
-        if not msg:
-            return None
-
-        body_text = msg.get("body", {}).get("content", "")
-        # If HTML, strip tags
-        if msg.get("body", {}).get("contentType") == "html":
-            body_text = self._strip_html(body_text)
-
-        return {
-            "message_id": msg.get("id", ""),
-            "source": "outlook",
-            "subject": msg.get("subject", ""),
-            "sender": msg.get("from", {}).get("emailAddress", {}).get("address", ""),
-            "date": msg.get("receivedDateTime", ""),
-            "body": body_text,
-            "raw": msg
-        }
-
-    # ── IMAP (Zoner) ───────────────────────────────────────────────
+    # ── IMAP (Zoner / third mailbox) ──────────────────────────────
 
     async def fetch_imap(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """Fetch emails via IMAP for third mailbox."""
         import imaplib
-        import ssl
         from email import message_from_bytes
 
         server = os.getenv("IMAP_SERVER", "imap.zoner.com")
@@ -333,14 +381,13 @@ class EmailFetcher:
             print("IMAP credentials not configured, skipping")
             return []
 
-        verify_ssl = os.getenv("IMAP_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
-
         emails = []
         try:
             context = ssl.create_default_context()
-            if not verify_ssl:
+            if not IMAP_VERIFY_SSL:
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
+
             with imaplib.IMAP4_SSL(server, port, ssl_context=context) as mail:
                 mail.login(user, password)
                 mail.select("inbox")
@@ -349,7 +396,6 @@ class EmailFetcher:
                 _, search_data = mail.search(None, f'(SINCE "{since_date}")')
 
                 message_ids = search_data[0].split()
-                # Limit to max_results (most recent)
                 message_ids = message_ids[-max_results:]
 
                 print(f"IMAP: Found {len(message_ids)} messages")
@@ -358,7 +404,6 @@ class EmailFetcher:
                     _, msg_data = mail.fetch(msg_id, "(RFC822)")
                     raw_email = msg_data[0][1]
                     email_message = message_from_bytes(raw_email)
-
                     email_data = self._parse_imap_message(email_message, msg_id.decode())
                     if email_data:
                         emails.append(email_data)
@@ -374,7 +419,6 @@ class EmailFetcher:
         sender = self._decode_header_value(msg.get("From", ""))
         date = msg.get("Date", "")
 
-        # Extract body
         body = ""
         if msg.is_multipart():
             for part in msg.walk():
@@ -383,14 +427,14 @@ class EmailFetcher:
                     try:
                         body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
                         break
-                    except:
+                    except Exception:
                         pass
                 elif content_type == "text/html":
                     try:
                         html = part.get_payload(decode=True).decode("utf-8", errors="ignore")
                         body = self._strip_html(html)
                         break
-                    except:
+                    except Exception:
                         pass
         else:
             try:
@@ -399,7 +443,7 @@ class EmailFetcher:
                     body = payload.decode("utf-8", errors="ignore")
                     if msg.get_content_type() == "text/html":
                         body = self._strip_html(body)
-            except:
+            except Exception:
                 pass
 
         return {
@@ -409,7 +453,7 @@ class EmailFetcher:
             "sender": sender,
             "date": date,
             "body": body,
-            "raw": None
+            "raw": None,
         }
 
     # ── Classification & Storage ───────────────────────────────────
@@ -419,7 +463,7 @@ class EmailFetcher:
         db: AsyncSession,
         sources: List[str] = None,
         max_results: int = 500,
-        since_days: int = 365
+        since_days: int = 365,
     ) -> Dict:
         """
         Fetch emails from all sources, classify them, and store subscriptions.
@@ -433,7 +477,7 @@ class EmailFetcher:
             "new_subscriptions": 0,
             "skipped": 0,
             "errors": 0,
-            "sources": {}
+            "sources": {},
         }
 
         all_emails = []
@@ -488,25 +532,21 @@ class EmailFetcher:
                 classification = self.classifier.classify(
                     email["subject"],
                     email["sender"],
-                    email["body"]
+                    email["body"],
                 )
 
-                # Mark as processed regardless of classification
-                # Use insert with on_conflict_do_nothing to handle duplicates gracefully
+                # Mark as processed (ON CONFLICT IGNORE for SQLite)
                 try:
                     stmt = insert(ProcessedEmail).values(
                         message_id=email["_unique_id"],
-                        source=email["source"]
+                        source=email["source"],
                     )
-                    # Use SQLite's ON CONFLICT IGNORE
                     stmt = stmt.on_conflict_do_nothing()
                     await db.execute(stmt)
                 except Exception:
-                    # Fallback: just skip if insertion fails
                     pass
 
                 if classification["is_subscription"]:
-                    # Check if subscription already exists for this service (case-insensitive)
                     norm_name = classification["service_name"].strip()
                     result = await db.execute(
                         select(Subscription).where(
@@ -516,7 +556,6 @@ class EmailFetcher:
                     existing = result.scalar_one_or_none()
 
                     if existing:
-                        # Update existing subscription with latest info
                         existing.cost = classification["cost"] or existing.cost
                         existing.currency = classification["currency"] or existing.currency
                         existing.billing_cycle = classification["billing_cycle"]
@@ -526,27 +565,25 @@ class EmailFetcher:
                     else:
                         # Extract start date from email date
                         start_date = None
-                        email_date = email.get("date", "")
-                        if email_date:
+                        email_date_str = email.get("date", "")
+                        if email_date_str:
                             try:
-                                # Try standard email date parser
-                                email_datetime = email.utils.parsedate_to_datetime(email_date)
+                                email_datetime = email.utils.parsedate_to_datetime(email_date_str)
                                 start_date = email_datetime.strftime("%Y-%m-%d")
                             except Exception:
                                 try:
-                                    # Fallback to ISO
-                                    email_datetime = datetime.fromisoformat(email_date.replace("Z", "+00:00"))
+                                    email_datetime = datetime.fromisoformat(
+                                        email_date_str.replace("Z", "+00:00")
+                                    )
                                     start_date = email_datetime.strftime("%Y-%m-%d")
                                 except Exception:
                                     pass
-                        
+
                         if not start_date:
                             start_date = datetime.utcnow().strftime("%Y-%m-%d")
 
-                        # Extract plan type if available
                         plan_name = classification.get("plan_name", "Standard")
 
-                        # Create new subscription
                         new_sub = Subscription(
                             service_name=classification["service_name"],
                             category=classification["category"],
@@ -554,17 +591,17 @@ class EmailFetcher:
                             currency=classification["currency"],
                             billing_cycle=classification["billing_cycle"],
                             status="active",
-                            start_date=start_date,                              # ? FIX #2: From email date
-                            notes=f"Plan: {plan_name}",                         # ? FIX #3: Store plan type
+                            start_date=start_date,
+                            notes=f"Plan: {plan_name}",
                             source=email["source"],
                         )
                         db.add(new_sub)
-                        await db.flush()  # Get the ID
+                        await db.flush()
                         subscription_id = new_sub.id
                         results["new_subscriptions"] += 1
                         target_sub = new_sub
 
-                    # Determine event date from email
+                    # Determine event date
                     email_date = datetime.utcnow()
                     try:
                         raw_date = email.get("date", "")
@@ -583,7 +620,7 @@ class EmailFetcher:
                         billing_cycle=classification["billing_cycle"],
                         event_date=email_date,
                         source_type=classification["source_type"],
-                        message_id=email["_unique_id"]
+                        message_id=email["_unique_id"],
                     )
                     db.add(event)
 
@@ -605,8 +642,6 @@ class EmailFetcher:
         except Exception as e:
             print(f"Database commit error: {e}")
             await db.rollback()
-            # Return partial results if commit fails
-            return results
 
         return results
 
@@ -616,11 +651,6 @@ class EmailFetcher:
         """Format date for Gmail search query (YYYY/MM/DD)."""
         date = datetime.now() - timedelta(days=days)
         return date.strftime("%Y/%m/%d")
-
-    def _format_iso_date(self, days: int) -> str:
-        """Format date for Outlook filter (ISO 8601)."""
-        date = datetime.now() - timedelta(days=days)
-        return date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def _strip_html(self, html: str) -> str:
         """Remove HTML tags from text."""
@@ -638,10 +668,8 @@ class EmailFetcher:
             if isinstance(part, bytes):
                 try:
                     result.append(part.decode(charset or "utf-8", errors="ignore"))
-                except:
+                except Exception:
                     result.append(part.decode("utf-8", errors="ignore"))
             else:
                 result.append(part)
         return "".join(result)
-
-
