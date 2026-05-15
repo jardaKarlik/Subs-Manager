@@ -728,42 +728,11 @@ async def webhook_status(db: AsyncSession = Depends(get_db)):
 # Frontend Static Files Serving
 # ============================================================================
 
-# Mount static files (CSS, JS, images)
-frontend_dir = Path(__file__).parent / "frontend"
-if frontend_dir.exists():
-    # Mount static files at /static path
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
-
-
-# Serve index.html for root and SPA navigation
-@app.get("/")
-async def serve_root():
-    """Serve the main application."""
-    index_path = Path(__file__).parent / "frontend" / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
-    return {"error": "Application not found"}
-
-
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str):
-    """Serve SPA routes by returning index.html for all unknown routes."""
-    # Don't handle /api routes here - they're handled above
-    if full_path.startswith("api/") or full_path.startswith("static/"):
-        raise HTTPException(status_code=404, detail="Not Found")
-
-    # For all other routes (SPA navigation), serve index.html
-    index_path = Path(__file__).parent / "frontend" / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
-    return {"error": "Application not found"}
-
-
 # ============================================================================
 # Mount Frontend Static Files (AFTER all API routes to avoid route capture)
 # ============================================================================
 
-frontend_dir = Path(__file__).parent / "frontend"
+frontend_dir = Path(__file__).parent / "frontend_glass_dist"
 if frontend_dir.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
