@@ -386,12 +386,11 @@ class EmailClassifier:
         # Detect billing cycle
         billing_cycle = self._detect_billing_cycle(text)
 
-<<<<<<< Updated upstream
         # Extract plan name from email body ✅ FIX #3
         plan_name = self.extract_plan_name(text, service_name or 'Unknown')
-=======
+
+        # Refine category based on service name and content
         category = self._refine_category(service_name, category, text_lower)
->>>>>>> Stashed changes
 
         # Determine source type
         if is_free:

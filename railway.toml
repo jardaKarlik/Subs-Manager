@@ -1,5 +1,7 @@
-# Railway.app deployment configuration
+# Railway.app deployment configuration for Subscription Manager
+
 [build]
+# Using Nixpacks for Python dependencies
 builder = "nixpacks"
 
 [deploy]
@@ -9,16 +11,12 @@ restartPolicyMaxRetries = 3
 
 [environments.production]
 variables = [
-  "PYTHON_VERSION=3.11",
+  "PYTHON_VERSION=3.14",
   "PORT=8000",
 ]
 
+# Single backend service that serves both API and frontend
 [[services]]
-name = "backend"
+name = "subscription-manager"
 startCommand = "python -m uvicorn api:app --host 0.0.0.0 --port $PORT"
 ports = [{ port = 8000, type = "HTTP" }]
-
-[[services]]
-name = "frontend"
-startCommand = "cd frontend && python -m http.server 3000"
-ports = [{ port = 3000, type = "HTTP" }]

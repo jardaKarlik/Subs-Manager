@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show:*)",
+      "Bash(python -m uvicorn api:app --host 0.0.0.0 --port 8000)",
+      "Bash(echo \"Backend PID: $!\")",
+      "Bash(python -m http.server 3000)",
+      "Bash(echo \"Frontend PID: $!\")",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl:*)",
+      "Bash(python run_initial_sync.py)",
+      "Bash(python direct_backfill.py)",
+      "Bash(python -c \"from composio import ComposioToolSet, Action; print\\('OK'\\)\")",
+      "Bash(python -c \"from composio_core.client import Composio; print\\('OK'\\)\")",
+      "Bash(python -c \"import composio_core; print\\(composio_core.__file__\\)\")",
+      "Bash(pip list:*)",
+      "Bash(pip install:*)",
+      "Bash(python test_composio_connection.py)",
+      "Bash(python -c ':*)"
+    ]
+  }
+}
