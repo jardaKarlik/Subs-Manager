@@ -103,29 +103,43 @@ class EmailFetcher:
         composio_client = self._get_composio()
         if composio_client:
             try:
-                print(f"Gmail [v2]: account={gmail_account}, query='{query}', max_results={max_results}")
-
-                result = composio_client.tools.execute(
-                    slug="GMAIL_FETCH_EMAILS",
-                    arguments={
+                print(f"Gmail [v2]: query='{query}', requested_total={max_results}")
+                fetched_count = 0
+                page_token = None
+                
+                while fetched_count < max_results:
+                    batch_size = min(50, max_results - fetched_count)
+                    arguments = {
                         "query": query,
-                        "max_results": max_results,
+                        "max_results": batch_size,
                         "include_payload": True,
-                    },
-                    user_id=os.getenv("COMPOSIO_USER_ID", "default"),
-                    dangerously_skip_version_check=True,
-                )
+                    }
+                    if page_token:
+                        arguments["page_token"] = page_token
 
-                print(f"Gmail [v2]: result type={type(result).__name__}")
-                # Parse result - v2 returns ToolExecutionResponse with data attribute
-                if hasattr(result, 'data'):
-                    emails = self._parse_gmail_v2_result({"data": result.data})
-                elif isinstance(result, dict):
-                    emails = self._parse_gmail_v2_result(result)
-                else:
-                    emails = self._parse_gmail_v2_result({"data": {}})
+                    result = composio_client.tools.execute(
+                        slug="GMAIL_FETCH_EMAILS",
+                        arguments=arguments,
+                        user_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                        dangerously_skip_version_check=True,
+                    )
+                    
+                    data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
+                    data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
+                    
+                    batch_emails = self._parse_gmail_v2_result({"data": data})
+                    if not batch_emails:
+                        break
+                        
+                    emails.extend(batch_emails)
+                    fetched_count += len(batch_emails)
+                    
+                    page_token = data.get("nextPageToken")
+                    if not page_token:
+                        break
 
                 if emails:
+                    print(f"Gmail [v2]: total emails extracted: {len(emails)}")
                     return emails
                 print("Gmail [v2]: no emails extracted, trying v1 fallback")
             except Exception as e:
@@ -235,26 +249,42 @@ class EmailFetcher:
         composio_client = self._get_composio()
         if composio_client:
             try:
-                print(f"Outlook [v2]: account={outlook_account}, filter='{filter_str}', max_results={max_results}")
-
-                result = composio_client.tools.execute(
-                    slug="OUTLOOK_QUERY_EMAILS",
-                    arguments={
+                print(f"Outlook [v2]: filter='{filter_str}', requested_total={max_results}")
+                fetched_count = 0
+                
+                while fetched_count < max_results:
+                    batch_size = min(50, max_results - fetched_count)
+                    arguments = {
                         "user_id": user_email,
                         "select": select_fields,
                         "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}",
-                        "top": max_results,
-                    },
-                    user_id=os.getenv("COMPOSIO_USER_ID", "default"),
-                    dangerously_skip_version_check=True,
-                )
+                        "top": batch_size,
+                    }
+                    if fetched_count > 0:
+                        arguments["skip"] = fetched_count
 
-                print(f"Outlook [v2]: result type={type(result).__name__}")
-                if hasattr(result, 'data'):
-                    emails = self._parse_outlook_v2_result({"data": result.data})
-                elif isinstance(result, dict):
-                    emails = self._parse_outlook_v2_result(result)
+                    result = composio_client.tools.execute(
+                        slug="OUTLOOK_QUERY_EMAILS",
+                        arguments=arguments,
+                        user_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                        dangerously_skip_version_check=True,
+                    )
+                    
+                    data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
+                    data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
+                    
+                    batch_emails = self._parse_outlook_v2_result({"data": data})
+                    if not batch_emails:
+                        break
+                        
+                    emails.extend(batch_emails)
+                    fetched_count += len(batch_emails)
+                    
+                    if not data.get("@odata.nextLink") or len(batch_emails) == 0:
+                        break
+
                 if emails:
+                    print(f"Outlook [v2]: total emails extracted: {len(emails)}")
                     return emails
                 print("Outlook [v2]: no emails extracted, trying v1 fallback")
             except Exception as e:
