@@ -54,11 +54,14 @@ class EmailFetcher:
             print(f"Gmail: Fetching emails with max_results={max_results}, query={query}")
 
             # Execute fetch_emails action directly
+            user_email = os.getenv("GMAIL_USER_EMAIL", "me")
             result = composio.actions.execute(
                 action=Action.GMAIL_FETCH_EMAILS,
                 params={
+                    "user_id": user_email,
+                    "query": query,
                     "max_results": max_results,
-                    "query": query
+                    "include_payload": True
                 }
             )
 
@@ -180,10 +183,12 @@ class EmailFetcher:
             filter_str = f"receivedDateTime ge {self._format_iso_date(since_days)}"
             print(f"Outlook: Fetching emails with limit={max_results}")
 
-            # Execute outlook query_emails action directly
+            # Execute outlook list_messages action directly
+            user_email = os.getenv("OUTLOOK_USER_EMAIL", "me")
             result = composio.actions.execute(
-                action=Action.OUTLOOK_QUERY_EMAILS,
+                action=Action.OUTLOOK_LIST_MESSAGES,
                 params={
+                    "user_id": user_email,
                     "limit": max_results,
                     "filter": filter_str
                 }
