@@ -23,13 +23,15 @@ from sqlalchemy.orm import selectinload
 
 from database import (
     init_db, get_db, AsyncSessionLocal,
-    Subscription, ProcessedEmail, SubscriptionEvent
+    Subscription, ProcessedEmail, SubscriptionEvent, BatchProcess
 )
 
 from email_fetcher import EmailFetcher
+from batch_orchestrator import BatchOrchestrator
 
 # Global fetcher instance
 email_fetcher = EmailFetcher()
+batch_orchestrator = BatchOrchestrator(email_fetcher)
 
 app = FastAPI(
     title="Subscription Manager API",
@@ -338,13 +340,15 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
 class ParseEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
     max_results: int = Field(default=1000, ge=1, le=50000)
-    since_days: int = Field(default=730, ge=1, le=730)
+    since_days: int = Field(default=30, ge=1, le=730)
+    batch_size: int = Field(default=10, ge=1, le=500)
 
 
 class SyncEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
     max_results: int = Field(default=100, ge=1, le=50000)
     since_days: int = Field(default=3, ge=1, le=365)
+    batch_size: int = Field(default=10, ge=1, le=500)
 
 
 @app.post("/api/parse-emails")
@@ -353,15 +357,16 @@ async def parse_emails(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Full backfill: Parse emails from all configured sources and detect subscriptions.
-    Default: 1 year back, 50 emails per source.
+    Full/backfill-style parse from all configured sources and detect subscriptions.
+    Default validation window: 30 days, 10 emails per batch to avoid payload limits.
     """
     try:
-        results = await email_fetcher.process_emails(
+        results = await batch_orchestrator.run_full_backfill(
             db=db,
             sources=req.sources,
             max_results=req.max_results,
-            since_days=req.since_days
+            since_days=req.since_days,
+            batch_size=req.batch_size,
         )
         return {
             "success": True,
@@ -382,11 +387,12 @@ async def sync_emails(
     Run this on a schedule (e.g., every 3 days) to keep subscriptions up to date.
     """
     try:
-        results = await email_fetcher.process_emails(
+        results = await batch_orchestrator.run_incremental_sync(
             db=db,
             sources=req.sources,
             max_results=req.max_results,
-            since_days=req.since_days
+            since_days=req.since_days,
+            batch_size=req.batch_size,
         )
         return {
             "success": True,
@@ -395,6 +401,31 @@ async def sync_emails(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email sync failed: {str(e)}")
+
+
+@app.get("/api/batch-status")
+async def get_batch_status(
+    limit: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return recent serialized email batch statuses."""
+    result = await db.execute(
+        select(BatchProcess)
+        .order_by(BatchProcess.started_at.desc(), BatchProcess.id.desc())
+        .limit(limit)
+    )
+    batches = result.scalars().all()
+
+    summary_result = await db.execute(
+        select(BatchProcess.status, func.count(BatchProcess.id))
+        .group_by(BatchProcess.status)
+    )
+    summary = {status: count for status, count in summary_result.all()}
+
+    return {
+        "summary": summary,
+        "batches": [batch.to_dict() for batch in batches],
+    }
 
 
 @app.get("/api/events")

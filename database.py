@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import String, Float, DateTime, select, delete, update, func
+from sqlalchemy import String, Float, DateTime, select, delete, update, func, Index
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -127,6 +127,51 @@ class SubscriptionEvent(Base):
             "source_type": self.source_type,
             "message_id": self.message_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class BatchProcess(Base):
+    """Track serialized email processing batches for resume and verification."""
+    __tablename__ = "batch_processes"
+    __table_args__ = (
+        Index(
+            "idx_batch_resume",
+            "source",
+            "process_type",
+            "status",
+            "batch_number",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    process_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    batch_number: Mapped[int] = mapped_column(nullable=False)
+    page_token: Mapped[str] = mapped_column(String(500), nullable=True)
+    emails_fetched: Mapped[int] = mapped_column(default=0)
+    emails_processed: Mapped[int] = mapped_column(default=0)
+    emails_skipped: Mapped[int] = mapped_column(default=0)
+    new_subscriptions: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    error_message: Mapped[str] = mapped_column(String(2000), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "process_type": self.process_type,
+            "source": self.source,
+            "batch_number": self.batch_number,
+            "page_token": self.page_token,
+            "emails_fetched": self.emails_fetched,
+            "emails_processed": self.emails_processed,
+            "emails_skipped": self.emails_skipped,
+            "new_subscriptions": self.new_subscriptions,
+            "status": self.status,
+            "error_message": self.error_message,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
 
 

@@ -416,6 +416,8 @@ class EmailFetcher:
                 seen_in_batch.add(msg_id)
                 email["_unique_id"] = msg_id
                 unique_in_batch.append(email)
+            else:
+                results["skipped"] += 1
 
         for email in unique_in_batch:
             result_row = await db.execute(select(ProcessedEmail).where(ProcessedEmail.message_id == email["_unique_id"]))
@@ -485,63 +487,74 @@ class EmailFetcher:
 
     async def _stream_fetch_and_process_gmail(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
         """Fetch Gmail in batches and process immediately."""
+        fetched_count = 0
+        async for batch in self._stream_fetch_batches_gmail(max_results, since_days):
+            fetched_count += len(batch.emails)
+            await self._process_email_batch(db, batch.emails, results)
+            print(f"  Gmail batch #{batch.batch_number}: {len(batch.emails)} fetched -> total processed: {results['processed']}")
+        results["sources"]["gmail"] = fetched_count
+
+    async def _stream_fetch_batches_gmail(self, max_results: int, since_days: int, batch_size: int = 100, start_batch_number: int = 1, page_token: str = None):
+        """Yield Gmail email batches without inserting them."""
+        from batch_orchestrator import EmailBatch
         gmail_account = os.getenv("GMAIL_ACCOUNT_ID")
         composio_client = self._get_composio()
         if not gmail_account or not composio_client: return
         query = f"after:{self._format_gmail_date(since_days)}"
-        fetched_count, page_token, batch_num = 0, None, 0
+        fetched_count, batch_num = 0, start_batch_number - 1
         while fetched_count < max_results:
-            batch_size = min(100, max_results - fetched_count)
-            arguments = {"query": query, "max_results": batch_size, "include_payload": True}
+            current_size = min(batch_size, max_results - fetched_count)
+            arguments = {"query": query, "max_results": current_size, "include_payload": True}
             if page_token: arguments["page_token"] = page_token
-            try:
-                result = composio_client.tools.execute(slug="GMAIL_FETCH_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
-                data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
-                data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
-                batch_emails = self._parse_gmail_v2_result({"data": data})
-                if not batch_emails: break
-                batch_num += 1
-                fetched_count += len(batch_emails)
-                await self._process_email_batch(db, batch_emails, results)
-                print(f"  Gmail batch #{batch_num}: {len(batch_emails)} fetched -> total processed: {results['processed']}")
-                page_token = data.get("nextPageToken")
-                if not page_token: break
-                import asyncio
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                print(f"Gmail [v2] batch error: {e}")
-                break
-        results["sources"]["gmail"] = fetched_count
+            result = composio_client.tools.execute(slug="GMAIL_FETCH_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
+            data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
+            data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
+            batch_emails = self._parse_gmail_v2_result({"data": data})
+            if not batch_emails: break
+            batch_num += 1
+            fetched_count += len(batch_emails)
+            next_page_token = data.get("nextPageToken")
+            yield EmailBatch(source="gmail", batch_number=batch_num, emails=batch_emails, page_token=page_token, next_page_token=next_page_token)
+            page_token = next_page_token
+            if not page_token: break
+            import asyncio
+            await asyncio.sleep(0.5)
 
     async def _stream_fetch_and_process_outlook(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
         """Fetch Outlook in batches and process immediately."""
+        fetched_count = 0
+        async for batch in self._stream_fetch_batches_outlook(max_results, since_days):
+            fetched_count += len(batch.emails)
+            await self._process_email_batch(db, batch.emails, results)
+            print(f"  Outlook batch #{batch.batch_number}: {len(batch.emails)} fetched -> total processed: {results['processed']}")
+        results["sources"]["outlook"] = fetched_count
+
+    async def _stream_fetch_batches_outlook(self, max_results: int, since_days: int, batch_size: int = 100, start_batch_number: int = 1, skip: int = 0):
+        """Yield Outlook email batches without inserting them."""
+        from batch_orchestrator import EmailBatch
         outlook_account = os.getenv("OUTLOOK_ACCOUNT_ID")
         composio_client = self._get_composio()
         if not outlook_account or not composio_client: return
         user_email = os.getenv("OUTLOOK_USER_EMAIL", "")
         select_fields = ["subject", "from", "body", "receivedDateTime", "bodyPreview", "hasAttachments", "isRead"]
-        fetched_count, batch_num = 0, 0
+        fetched_count, batch_num = 0, start_batch_number - 1
         while fetched_count < max_results:
-            batch_size = min(100, max_results - fetched_count)
-            arguments = {"user_id": user_email, "select": select_fields, "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}", "top": batch_size}
-            if fetched_count > 0: arguments["skip"] = fetched_count
-            try:
-                result = composio_client.tools.execute(slug="OUTLOOK_QUERY_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
-                data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
-                data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
-                batch_emails = self._parse_outlook_v2_result({"data": data})
-                if not batch_emails: break
-                batch_num += 1
-                fetched_count += len(batch_emails)
-                await self._process_email_batch(db, batch_emails, results)
-                print(f"  Outlook batch #{batch_num}: {len(batch_emails)} fetched -> total processed: {results['processed']}")
-                if not data.get("@odata.nextLink") or len(batch_emails) == 0: break
-                import asyncio
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                print(f"Outlook [v2] batch error: {e}")
-                break
-        results["sources"]["outlook"] = fetched_count
+            current_size = min(batch_size, max_results - fetched_count)
+            arguments = {"user_id": user_email, "select": select_fields, "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}", "top": current_size}
+            if skip > 0: arguments["skip"] = skip
+            result = composio_client.tools.execute(slug="OUTLOOK_QUERY_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
+            data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
+            data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
+            batch_emails = self._parse_outlook_v2_result({"data": data})
+            if not batch_emails: break
+            batch_num += 1
+            fetched_count += len(batch_emails)
+            current_skip = skip
+            skip += len(batch_emails)
+            yield EmailBatch(source="outlook", batch_number=batch_num, emails=batch_emails, page_token=str(current_skip), next_page_token=str(skip))
+            if not data.get("@odata.nextLink") or len(batch_emails) == 0: break
+            import asyncio
+            await asyncio.sleep(0.5)
 
     async def process_emails(self, db: AsyncSession, sources: List[str] = None, max_results: int = 500, since_days: int = 365) -> Dict:
         """Fetch and process emails incrementally. Raises on critical failure."""
