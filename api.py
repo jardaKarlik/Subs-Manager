@@ -397,6 +397,62 @@ async def sync_emails(
         raise HTTPException(status_code=500, detail=f"Email sync failed: {str(e)}")
 
 
+@app.get("/api/sync-emails")
+async def sync_emails_get(
+    sources: Optional[str] = Query(None, description="Comma-separated source names"),
+    max_results: int = Query(100, ge=1, le=50000),
+    since_days: int = Query(3, ge=1, le=365),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    GET version: Incremental sync with query params.
+    Use this for simple curl calls without JSON body.
+    """
+    try:
+        source_list = [s.strip() for s in sources.split(",")] if sources else None
+        results = await email_fetcher.process_emails(
+            db=db,
+            sources=source_list,
+            max_results=max_results,
+            since_days=since_days
+        )
+        return {
+            "success": True,
+            "message": f"Sync complete: {results['processed']} processed, {results['new_subscriptions']} new, {results['skipped']} skipped",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email sync failed: {str(e)}")
+
+
+@app.get("/api/parse-emails")
+async def parse_emails_get(
+    sources: Optional[str] = Query(None, description="Comma-separated source names"),
+    max_results: int = Query(1000, ge=1, le=50000),
+    since_days: int = Query(730, ge=1, le=730),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    GET version: Full backfill with query params.
+    Use this for simple curl calls without JSON body.
+    """
+    try:
+        source_list = [s.strip() for s in sources.split(",")] if sources else None
+        results = await email_fetcher.process_emails(
+            db=db,
+            sources=source_list,
+            max_results=max_results,
+            since_days=since_days
+        )
+        return {
+            "success": True,
+            "message": f"Processed {results['processed']} emails, found {results['new_subscriptions']} new subscriptions",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email parsing failed: {str(e)}")
+
+
 @app.get("/api/events")
 async def get_events(
     service_name: Optional[str] = Query(None),
