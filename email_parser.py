@@ -52,6 +52,8 @@ KNOWN_PROVIDERS = {
     'leonardo': ('Leonardo.ai', 'ai'),
     'grok': ('Grok', 'ai'),
     'huggingface': ('Hugging Face', 'ai'),
+    'cline': ('Cline', 'ai'),
+    'openrouter': ('OpenRouter', 'ai'),
     # Streaming
     'netflix': ('Netflix', 'streaming'),
     'spotify': ('Spotify', 'music'),
@@ -226,7 +228,7 @@ BILLING_CYCLE_PATTERNS = {
     'monthly': r'\b(monthly|month|per month|/month|měsíční|měsíčně)\b',
     'yearly': r'\b(yearly|yearly|annual|per year|/year|roční|ročně)\b',
     'weekly': r'\b(weekly|week|per week)\b',
-    'daily': r'\b(daily|day|per day)\b',
+    'daily': r'\b(daily|per day|/day)\b',    # Narrower: exclude standalone "day"
     'one-time': r'\b(one.time|one time|single purchase|purchase)\b',
 }
 
@@ -260,7 +262,7 @@ class EmailClassifier:
         
         # Specific patterns
         plan_patterns = [
-            r"plan:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
+            r"plan:\s*([a-z0-9]+(?:\s[a-z0-9]+){0,2})(?:\.|,|\s\s|\n|\r|$)",
             r"subscription:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
             r"tier:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
             r"version\s*[:=]?\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
@@ -515,10 +517,10 @@ class EmailClassifier:
 
     def _extract_amount(self, text: str) -> Tuple[float, str]:
         """Extract monetary amount and currency from text."""
-        best_amount = 0.0
-        best_currency = 'USD'
+        amount_matches = []
+        # (placeholder removed)
 
-        # Find currency symbol/context first
+        # (placeholder removed)
         for pattern in self.compiled_patterns['amount']:
             for match in pattern.finditer(text):
                 amount_str = match.group(1)
@@ -534,11 +536,17 @@ class EmailClassifier:
                 context = text[start:match.end()]
                 currency = self._detect_currency(context)
 
-                if amount > best_amount:
-                    best_amount = amount
-                    best_currency = currency
+                # Take first reasonable amount by position, not largest
+                amount_matches.append((match.start(), amount, currency))
+                # (line merged into amount_matches above)
+                # (line merged into amount_matches above)
 
-        return best_amount, best_currency
+        # Return first reasonable amount by position (not largest)
+        amount_matches.sort(key=lambda x: x[0])
+        for _, amount, currency in amount_matches:
+            if amount > 0.01:
+                return amount, currency
+        return 0.0, 'USD'
 
     def _detect_currency(self, context: str) -> str:
         """Detect currency from text context."""
@@ -562,7 +570,9 @@ class EmailClassifier:
         parts = domain.split('.')
         name = parts[0]
         # Common cleanups
-        if name in ('mail', 'email', 'notify', 'noreply', 'no-reply', 'service', 'support'):
+        if name.lower() in ('mail', 'email', 'notify', 'noreply', 'no-reply', 'service', 'support',
+                            'updates', 'hello', 'info', 'contact', 'news', 'newsletter', 'invoice',
+                            'billing', 'no-reply'):
             if len(parts) > 1:
                 name = parts[1]
         return name.title()
