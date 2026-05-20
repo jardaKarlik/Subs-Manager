@@ -1,0 +1,123 @@
+{
+  "summary": {
+    "total_subscriptions": 11,
+    "total_emails_processed": 100,
+    "total_events": 18,
+    "detection_rate": "11.0%",
+    "test_date": "20260515_202057",
+    "threshold": 0.25,
+    "body_sentences": 5
+  },
+  "subscriptions": [
+    {
+      "service_name": "Spotify",
+      "category": "music",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "Ollama",
+      "category": "ai",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "Claude",
+      "category": "ai",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Pro",
+      "source": "gmail"
+    },
+    {
+      "service_name": "Google",
+      "category": "cloud",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "SoundCloud",
+      "category": "music",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "News",
+      "category": "other",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "Composio",
+      "category": "dev_tools",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "PlayStation",
+      "category": "gaming",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "Canva",
+      "category": "design",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "List",
+      "category": "other",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    },
+    {
+      "service_name": "OpenAI",
+      "category": "ai",
+      "cost": 0.0,
+      "currency": "USD",
+      "billing_cycle": "monthly",
+      "start_date": "2026-05-15",
+      "notes": "Plan: Standard",
+      "source": "gmail"
+    }
+  ]
+}

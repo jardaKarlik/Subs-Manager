@@ -17,7 +17,10 @@
       "Bash(pip list:*)",
       "Bash(pip install:*)",
       "Bash(python test_composio_connection.py)",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "WebSearch",
+      "WebFetch(domain:docs.railway.com)",
+      "Bash(claude mcp *)"
     ]
   }
 }

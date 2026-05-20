@@ -217,7 +217,7 @@ class EmailFetcher:
                 fetched_count = 0
                 page_token = None
                 while fetched_count < max_results:
-                    batch_size = min(100, max_results - fetched_count)
+                    batch_size = min(20, max_results - fetched_count)
                     arguments = {"query": query, "max_results": batch_size, "include_payload": True}
                     if page_token: arguments["page_token"] = page_token
                     result = composio_client.tools.execute(slug="GMAIL_FETCH_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
@@ -288,7 +288,7 @@ class EmailFetcher:
             try:
                 fetched_count = 0
                 while fetched_count < max_results:
-                    batch_size = min(100, max_results - fetched_count)
+                    batch_size = min(20, max_results - fetched_count)
                     arguments = {"user_id": user_email, "select": select_fields, "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}", "top": batch_size}
                     if fetched_count > 0: arguments["skip"] = fetched_count
                     result = composio_client.tools.execute(slug="OUTLOOK_QUERY_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
@@ -491,7 +491,7 @@ class EmailFetcher:
         query = f"after:{self._format_gmail_date(since_days)}"
         fetched_count, page_token, batch_num = 0, None, 0
         while fetched_count < max_results:
-            batch_size = min(100, max_results - fetched_count)
+            batch_size = min(20, max_results - fetched_count)
             arguments = {"query": query, "max_results": batch_size, "include_payload": True}
             if page_token: arguments["page_token"] = page_token
             try:
@@ -522,7 +522,7 @@ class EmailFetcher:
         select_fields = ["subject", "from", "body", "receivedDateTime", "bodyPreview", "hasAttachments", "isRead"]
         fetched_count, batch_num = 0, 0
         while fetched_count < max_results:
-            batch_size = min(100, max_results - fetched_count)
+            batch_size = min(20, max_results - fetched_count)
             arguments = {"user_id": user_email, "select": select_fields, "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}", "top": batch_size}
             if fetched_count > 0: arguments["skip"] = fetched_count
             try:

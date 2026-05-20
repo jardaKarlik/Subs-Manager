@@ -1,0 +1,106 @@
+{
+  "sample_count": 20,
+  "total_count": 100,
+  "emails": [
+    {
+      "message_id": "gmail:19e2cd3023490ba1",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.067911"
+    },
+    {
+      "message_id": "gmail:19e2cb50118f78ba",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.072289"
+    },
+    {
+      "message_id": "gmail:19e2c1671e06b92e",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.074492"
+    },
+    {
+      "message_id": "gmail:19e2bf456c627ff9",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.076810"
+    },
+    {
+      "message_id": "gmail:19e2bef8a1e98dbc",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.078937"
+    },
+    {
+      "message_id": "gmail:19e2ba11f3ac2a94",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.087584"
+    },
+    {
+      "message_id": "gmail:19e2b993240bcfcc",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.091734"
+    },
+    {
+      "message_id": "gmail:19e2b8d3139ff21f",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.093121"
+    },
+    {
+      "message_id": "gmail:19e2b6f8c09a9e54",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.094630"
+    },
+    {
+      "message_id": "gmail:19e2b5ecf6d8a303",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.095983"
+    },
+    {
+      "message_id": "gmail:19e2b57acc7d4260",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.098188"
+    },
+    {
+      "message_id": "gmail:19e2b3f786ada90e",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.100575"
+    },
+    {
+      "message_id": "gmail:19e2b3527b58c5df",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.102644"
+    },
+    {
+      "message_id": "gmail:19e2b26ac0dd292c",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.104414"
+    },
+    {
+      "message_id": "gmail:19e2b1b5b8b52000",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.106847"
+    },
+    {
+      "message_id": "gmail:19e2afab947a1a92",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.109166"
+    },
+    {
+      "message_id": "gmail:19e2ab412374389a",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.110912"
+    },
+    {
+      "message_id": "gmail:19e2a56afb7da614",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.112654"
+    },
+    {
+      "message_id": "gmail:19e2a5332efb90e3",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.114378"
+    },
+    {
+      "message_id": "gmail:19e29e378963847b",
+      "source": "gmail",
+      "processed_date": "2026-05-15T18:20:40.116498"
+    }
+  ]
+}
