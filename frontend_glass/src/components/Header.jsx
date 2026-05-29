@@ -111,6 +111,16 @@ export default function Header({ onSync, currentView = 'dashboard', onNavigate }
               Dashboard
             </button>
             <button
+              onClick={() => onNavigate?.('approvals')}
+              className={`glass-panel px-4 py-2 rounded-lg font-medium transition-smooth ${
+                currentView === 'approvals'
+                  ? 'bg-yellow-500/30 text-yellow-100 border-yellow-500/30 shadow-lg shadow-yellow-800/20'
+                  : 'hover:bg-yellow-500/10 text-yellow-100/80 border-yellow-500/10'
+              }`}
+            >
+              Approvals
+            </button>
+            <button
               onClick={() => onNavigate?.('reports')}
               className={`glass-panel px-4 py-2 rounded-lg font-medium transition-smooth ${
                 currentView === 'reports'

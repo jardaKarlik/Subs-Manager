@@ -4,6 +4,7 @@ import Header from './components/Header'
 import StatsPanel from './components/StatsPanel'
 import GlassSubscriptionGrid from './components/GlassSubscriptionGrid'
 import ReportsPage from './components/ReportsPage'
+import ApprovalPage from './components/ApprovalPage'
 import useSubscriptions from './hooks/useSubscriptions'
 
 export default function App() {
@@ -49,6 +50,13 @@ export default function App() {
                 <GlassSubscriptionGrid subscriptions={subscriptions} loading={loading} onOpenInsights={openInsights} />
               </Suspense>
             </>
+          ) : view === 'approvals' ? (
+            <ApprovalPage
+              subscriptions={subscriptions}
+              loading={loading}
+              usingDemoData={usingDemoData}
+              onPendingUpdated={refetch}
+            />
           ) : (
             <ReportsPage
               subscriptions={subscriptions}
