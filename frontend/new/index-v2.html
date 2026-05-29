@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Subs</title>
+<link rel="stylesheet" href="style-v2.css">
+</head>
+<body>
+<div class="app">
+<!-- Header -->
+<header>
+<div class="brand"><div class="brand-icon">$</div><h1>subs</h1></div>
+<div class="actions">
+<button class="btn-secondary" onclick="sync()">↻ Sync</button>
+<button class="btn-primary" onclick="add()">+ Add</button>
+</div>
+</header>
+
+<!-- Hero Stats - Primary Focus -->
+<div class="hero">
+<div class="hero-main">
+<div class="hero-label">Monthly Spend</div>
+<div class="hero-value" id="hero-monthly">$0</div>
+<div class="hero-change" id="hero-change">—</div>
+</div>
+<div class="hero-chart">
+<canvas id="trendChart"></canvas>
+</div>
+</div>
+
+<!-- Secondary Stats Grid -->
+<div class="stats-grid">
+<div class="stat-card">
+<div class="stat-icon">📊</div>
+<div class="stat-info">
+<div class="stat-label">By Category</div>
+<div class="stat-value" id="category-count">0</div>
+</div>
+<canvas id="categoryChart" class="mini-chart"></canvas>
+</div>
+
+<div class="stat-card">
+<div class="stat-icon">✓</div>
+<div class="stat-info">
+<div class="stat-label">Active</div>
+<div class="stat-value" id="active-count">0</div>
+</div>
+<div class="stat-progress">
+<div class="progress-bar" id="active-bar"></div>
+</div>
+</div>
+
+<div class="stat-card">
+<div class="stat-icon">💤</div>
+<div class="stat-info">
+<div class="stat-label">Idle</div>
+<div class="stat-value" id="idle-count">0</div>
+</div>
+<div class="stat-detail" id="idle-cost">$0/mo wasted</div>
+</div>
+
+<div class="stat-card">
+<div class="stat-icon">📅</div>
+<div class="stat-info">
+<div class="stat-label">Yearly</div>
+<div class="stat-value" id="yearly-total">$0</div>
+</div>
+<div class="stat-detail">projected</div>
+</div>
+</div>
+
+<!-- Category Breakdown -->
+<div class="section-header">
+<h2>By Category</h2>
+<div class="section-actions">
+<button class="btn-filter active" data-filter="all">All</button>
+<button class="btn-filter" data-filter="active">Active</button>
+<button class="btn-filter" data-filter="idle">Idle</button>
+</div>
+</div>
+
+<div class="categories" id="categories"></div>
+
+<!-- Subscriptions List -->
+<div class="section-header">
+<h2>Subscriptions</h2>
+<div class="view-toggle">
+<button class="btn-view active" data-view="grid">⊞ Grid</button>
+<button class="btn-view" data-view="list">☰ List</button>
+</div>
+</div>
+
+<div class="subscriptions" id="subs">
+<div class="loading"><div class="spinner"></div><div>Loading...</div></div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="app-v2.js"></script>
+</body>
+</html>

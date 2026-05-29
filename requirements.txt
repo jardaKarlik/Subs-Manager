@@ -9,3 +9,8 @@ asyncpg
 psycopg2-binary
 httpx
 python-multipart
+
+requests
+composio>=0.13.0
+bcrypt
+apscheduler>=3.10
