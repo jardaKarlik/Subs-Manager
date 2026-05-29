@@ -1,0 +1,120 @@
+================================================================================
+  DATA REQUIREMENTS REVIEW SUMMARY
+  May 29, 2026
+================================================================================
+
+✅ VERDICT: ALL REQUIRED DATA IS AVAILABLE IN THE DATABASE
+   No new tables, columns, or measures needed.
+
+================================================================================
+  SCREENS ANALYZED
+================================================================================
+
+1. DASHBOARD VIEW
+   ├─ Stats Panel (costs, counts) ............................ ✅ COMPLETE
+   ├─ Subscription Grid (card display) ....................... ✅ COMPLETE
+   └─ Filter & Navigation ................................... ✅ COMPLETE
+
+2. REPORTS PAGE
+   ├─ Spend Treemap (annual costs by service) ............... ✅ COMPLETE
+   ├─ Category Pressure (breakdown by category) ............. ✅ COMPLETE
+   ├─ Renewal Radar (upcoming renewals) ..................... ✅ COMPLETE
+   ├─ 12-Month Trend (historical spending) ................. ✅ COMPLETE
+   └─ Billing Rhythm (cycle distribution) .................. ✅ COMPLETE
+
+================================================================================
+  DATABASE COVERAGE
+================================================================================
+
+TABLE: subscriptions
+  ✅ id, service_name, category, cost, currency
+  ✅ billing_cycle, status, next_billing_date
+  ✅ icon_url, start_date, notes
+  ✅ source, created_at, updated_at
+  ✅ Wallet fields: confirmed_by_wallet, last_payment_date, actual_cost
+  
+  COVERAGE: 100% ✅
+
+TABLE: subscription_events
+  ✅ id, subscription_id, service_name, category
+  ✅ amount, currency, billing_cycle, event_date
+  ✅ source_type, message_id, created_at
+  
+  COVERAGE: 100% ✅
+
+================================================================================
+  API ENDPOINTS COVERAGE
+================================================================================
+
+GET /api/subscriptions?page_size=100
+  ✅ Returns all subscription fields needed for UI
+  ✅ Includes cost calculations for display
+  ✅ Plus: total_spent (aggregated from wallet)
+
+GET /api/events?months=12
+  ✅ Returns all event fields for timeline
+  ✅ Includes amounts and dates for trends
+
+GET /api/stats
+  ✅ Returns aggregated statistics
+  ✅ Includes wallet-enriched metrics
+
+================================================================================
+  CALCULATIONS LOCATION
+================================================================================
+
+FRONTEND (Correct approach):
+  ✅ Monthly cost normalization ........................ GlassCard.jsx
+  ✅ Annual cost normalization ......................... GlassCard.jsx
+  ✅ Category grouping & summing ....................... ReportsPage.jsx
+  ✅ Top 5 concentration calculation ................... ReportsPage.jsx
+  ✅ 12-month trend aggregation ........................ ReportsPage.jsx
+
+API (Efficient pre-aggregation):
+  ✅ Total monthly/yearly costs ........................ /api/stats
+  ✅ Category cost breakdown ........................... /api/stats
+  ✅ Status distribution ............................... /api/stats
+
+================================================================================
+  DATA QUALITY ASSESSMENT
+================================================================================
+
+ESSENTIAL FIELDS (Always available):
+  ✅ service_name - Non-null, always populated
+  ✅ category - Defaults to "other"
+  ✅ cost - Numeric, defaults to 0.0
+  ✅ currency - Defaults to USD
+  ✅ billing_cycle - Validated enum
+  ✅ status - Validated enum
+  ✅ created_at, updated_at - Auto-managed
+
+PARTIAL FIELDS (May be missing):
+  ⚠️ next_billing_date - Extracted from emails
+  ⚠️ icon_url - Populated via Clearbit
+  ⚠️ start_date - Extracted from emails
+
+================================================================================
+  CONCLUSION
+================================================================================
+
+✅ NO NEW DATABASE FIELDS REQUIRED
+   Current schema provides 100% coverage.
+
+✅ NO NEW TABLES REQUIRED
+   Subscriptions + SubscriptionEvent are sufficient.
+
+✅ CALCULATIONS PROPERLY PLACED
+   • Raw data in DB ✅
+   • Presentation logic in frontend ✅
+   • Stats pre-aggregation in API ✅
+
+✅ ARCHITECTURE IS SOUND
+   Simple, maintainable, and properly normalized.
+
+RECOMMENDATION: Proceed with current implementation. No schema changes needed.
+
+================================================================================
+Document Version: 1.0
+Last Updated: May 29, 2026
+Created by: Cline AI
+================================================================================
