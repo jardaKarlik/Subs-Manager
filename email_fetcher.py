@@ -220,7 +220,7 @@ class EmailFetcher:
                     batch_size = min(20, max_results - fetched_count)
                     arguments = {"query": query, "max_results": batch_size, "include_payload": True}
                     if page_token: arguments["page_token"] = page_token
-                    result = composio_client.tools.execute(slug="GMAIL_FETCH_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
+                    result = composio_client.tools.execute(slug="GMAIL_FETCH_EMAILS", arguments=arguments, connected_account_id=gmail_account, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
                     data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
                     data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
                     batch_emails = self._parse_gmail_v2_result({"data": data})
@@ -291,7 +291,7 @@ class EmailFetcher:
                     batch_size = min(20, max_results - fetched_count)
                     arguments = {"user_id": user_email, "select": select_fields, "filter": f"receivedDateTime ge {self._format_outlook_date(since_days)}", "top": batch_size}
                     if fetched_count > 0: arguments["skip"] = fetched_count
-                    result = composio_client.tools.execute(slug="OUTLOOK_QUERY_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
+                    result = composio_client.tools.execute(slug="OUTLOOK_LIST_MESSAGES", arguments=arguments, connected_account_id=outlook_account, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
                     data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
                     data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
                     batch_emails = self._parse_outlook_v2_result({"data": data})

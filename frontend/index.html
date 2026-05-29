@@ -140,6 +140,141 @@
         .status-idle { background: rgba(255,107,26,0.2); color: #ff6b1a; }
         .status-cancelled { background: rgba(138,138,142,0.2); color: #8a8a8e; }
         .loading { text-align: center; padding: 40px; color: #888; }
+
+        /* Discovery section */
+        .section-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+        .section-title { font-size: 14px; font-weight: 600; color: #e0e0e0; }
+        .section-hint { font-size: 12px; color: #666; }
+        .candidates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+        .candidate-card {
+            background: #111113;
+            border: 1px solid rgba(255,230,0,0.2);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .candidate-payee { font-size: 13px; font-weight: 600; color: #e0e0e0; margin-bottom: 4px; }
+        .candidate-meta { font-size: 11px; color: #888; margin-bottom: 4px; }
+        .candidate-score { font-size: 10px; color: #ffe600; margin-bottom: 10px; }
+        .candidate-actions { display: flex; gap: 8px; align-items: center; }
+        .candidate-name-input {
+            flex: 1; background: #0a0a0b; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px; color: #fff; padding: 5px 8px; font-size: 12px;
+        }
+        .btn-confirm {
+            background: rgba(95,227,154,0.15); border: 1px solid rgba(95,227,154,0.3);
+            color: #5fe39a; border-radius: 5px; padding: 5px 10px; font-size: 12px;
+            cursor: pointer; white-space: nowrap;
+        }
+        .btn-confirm:hover { background: rgba(95,227,154,0.25); }
+        .candidate-promoted { color: #5fe39a; font-size: 13px; padding: 8px 0; }
+
+        /* Wallet enrichment */
+        .stat-card--wallet { border-color: rgba(95,227,154,0.3); }
+        .sub-card--verified { border-color: rgba(95,227,154,0.4); }
+        .badge-verified {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            color: #5fe39a;
+            background: rgba(95,227,154,0.15);
+            border-radius: 4px;
+            padding: 1px 5px;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+        .sub-actual-cost {
+            font-size: 11px;
+            color: #7aa9ff;
+            margin-top: 2px;
+        }
+        .sub-last-payment {
+            font-size: 10px;
+            color: #666;
+            margin-top: 1px;
+        }
+
+        /* Sub card top row: icon + total spent */
+        .sub-card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        .sub-card-top .sub-icon { margin-bottom: 0; }
+
+        .sub-total-spent {
+            font-size: 11px;
+            font-weight: 600;
+            color: #5fe39a;
+            background: rgba(95,227,154,0.1);
+            border-radius: 5px;
+            padding: 3px 7px;
+            white-space: nowrap;
+            align-self: flex-start;
+        }
+
+        .badge-source {
+            font-size: 9px;
+            font-weight: 500;
+            color: #7aa9ff;
+            background: rgba(122,169,255,0.12);
+            border-radius: 3px;
+            padding: 1px 4px;
+            margin-left: 4px;
+            vertical-align: middle;
+            text-transform: lowercase;
+        }
+
+        /* Pending confirmation section */
+        .pending-section-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .pending-section-title { font-size: 14px; font-weight: 600; color: #ffe600; }
+        .pending-section-hint { font-size: 12px; color: #666; margin-left: 10px; }
+        .pending-section-actions { display: flex; gap: 8px; }
+
+        .pending-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 12px;
+        }
+        .pending-card {
+            background: #111113;
+            border: 1px solid rgba(255,230,0,0.3);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .pending-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .pending-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: #ffe600; }
+        .pending-info { flex: 1; }
+        .pending-name { font-size: 14px; font-weight: 600; color: #e0e0e0; }
+        .pending-meta { font-size: 11px; color: #888; margin-top: 2px; }
+        .pending-actions { display: flex; gap: 8px; }
+        .btn-approve {
+            flex: 1; background: rgba(95,227,154,0.15); border: 1px solid rgba(95,227,154,0.3);
+            color: #5fe39a; border-radius: 5px; padding: 6px 10px; font-size: 12px;
+            cursor: pointer; font-weight: 500;
+        }
+        .btn-approve:hover { background: rgba(95,227,154,0.25); }
+        .btn-dismiss {
+            flex: 1; background: rgba(138,138,142,0.1); border: 1px solid rgba(138,138,142,0.2);
+            color: #8a8a8e; border-radius: 5px; padding: 6px 10px; font-size: 12px;
+            cursor: pointer; font-weight: 500;
+        }
+        .btn-dismiss:hover { background: rgba(138,138,142,0.2); }
+        .btn-bulk {
+            padding: 7px 14px; border-radius: 5px; font-size: 12px; font-weight: 500; cursor: pointer; border: none;
+        }
+        .btn-bulk-approve { background: rgba(95,227,154,0.2); color: #5fe39a; border: 1px solid rgba(95,227,154,0.3); }
+        .btn-bulk-dismiss { background: rgba(138,138,142,0.15); color: #8a8a8e; border: 1px solid rgba(138,138,142,0.2); }
     </style>
 </head>
 <body>
@@ -172,10 +307,40 @@
                 <div class="stat-label">Total</div>
                 <div class="stat-value" id="total-count">0</div>
             </div>
+            <div class="stat-card stat-card--wallet">
+                <div class="stat-label">✓ Verified</div>
+                <div class="stat-value" id="confirmed-count">—</div>
+            </div>
+            <div class="stat-card stat-card--wallet">
+                <div class="stat-label">Actual/mo (CZK)</div>
+                <div class="stat-value"><span id="actual-spend">—</span></div>
+            </div>
         </div>
 
         <div id="subscriptions" class="subscriptions-grid">
             <div class="loading">Loading...</div>
+        </div>
+
+        <div id="pending-section" style="display:none; margin-top: 32px;">
+            <div class="pending-section-header">
+                <div>
+                    <span class="pending-section-title">Pending Review</span>
+                    <span class="pending-section-hint">Wallet-discovered subscriptions awaiting confirmation</span>
+                </div>
+                <div class="pending-section-actions">
+                    <button class="btn-bulk btn-bulk-approve" onclick="approveSelected()">✓ Approve Selected</button>
+                    <button class="btn-bulk btn-bulk-dismiss" onclick="dismissSelected()">✕ Dismiss Selected</button>
+                </div>
+            </div>
+            <div id="pending-grid" class="pending-grid"></div>
+        </div>
+
+        <div id="candidates-section" style="display:none; margin-top: 32px;">
+            <div class="section-header">
+                <span class="section-title">Discovered from bank records</span>
+                <span class="section-hint">Recurring payments not yet tracked as subscriptions</span>
+            </div>
+            <div id="candidates-grid" class="candidates-grid"></div>
         </div>
     </div>
     <script src="simple.js"></script>
