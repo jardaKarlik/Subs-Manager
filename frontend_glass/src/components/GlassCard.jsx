@@ -47,6 +47,39 @@ function annualizedCost(subscription) {
   }
 }
 
+function daysUntilBilling(nextBillingDate) {
+  if (!nextBillingDate) return null
+  const nextDate = new Date(nextBillingDate)
+  if (isNaN(nextDate.getTime())) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  nextDate.setHours(0, 0, 0, 0)
+  const diff = nextDate - today
+  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+}
+
+function getBillingProgress(daysLeft, billingCycle) {
+  if (!daysLeft || daysLeft < 0) return 0
+  const cycleDays = {
+    daily: 1,
+    weekly: 7,
+    monthly: 30,
+    yearly: 365,
+    'one-time': 365,
+  }
+  const totalDays = cycleDays[billingCycle] || 30
+  const progress = Math.max(0, Math.min(100, ((totalDays - daysLeft) / totalDays) * 100))
+  return Math.round(progress)
+}
+
+function isExpiringSoon(daysLeft) {
+  return daysLeft !== null && daysLeft > 0 && daysLeft <= 7
+}
+
+function isExpired(daysLeft) {
+  return daysLeft !== null && daysLeft <= 0
+}
+
 export default function GlassCard({ subscription, initials, colors, delay, onOpenInsights }) {
   const [logoFailed, setLogoFailed] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
@@ -54,6 +87,11 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const [cardRotation, setCardRotation] = useState({ x: 0, y: 0 })
   const [lightPos, setLightPos] = useState({ x: 50, y: 50 })
+
+  const daysLeft = daysUntilBilling(subscription.next_billing_date)
+  const progress = getBillingProgress(daysLeft, subscription.billing_cycle)
+  const expiringSoon = isExpiringSoon(daysLeft)
+  const expired = isExpired(daysLeft)
 
   const handleMouseMove = (e) => {
     if (!cardRef.current) return
@@ -162,27 +200,55 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
         <div className={`absolute inset-0 opacity-0 group-hover:opacity-5 bg-gradient-to-br ${colors.bg} transition-opacity pointer-events-none rounded-2xl`}></div>
 
         <div className="relative z-10 flex h-full flex-col">
-          <div className="absolute right-0 top-0 text-right">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Annual</p>
-            <p className="text-sm font-semibold text-palette-100">{annualTotal}</p>
-          </div>
-
-          <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center mb-4 shadow-lg group-hover:shadow-xl transition-all overflow-hidden">
-            {getIconUrl() && !logoFailed ? (
-              <img
-                src={getIconUrl()}
-                alt={subscription.service_name}
-                className="w-10 h-10 object-contain"
-                loading="lazy"
-                onError={() => setLogoFailed(true)}
-              />
-            ) : (
-              <div
-                className={`w-full h-full bg-gradient-to-br ${colors.bg} flex items-center justify-center font-bold text-lg text-white`}
-              >
-                {initials}
+          <div className="absolute right-0 top-0 flex flex-col items-end gap-2 p-4">
+            {expiringSoon && !expired && (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/20 border border-amber-500/40">
+                <span className="text-amber-400 text-xs font-medium">⚠ Renews in {daysLeft}d</span>
               </div>
             )}
+            {expired && (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/20 border border-red-500/40">
+                <span className="text-red-400 text-xs font-medium">🔴 Expired</span>
+              </div>
+            )}
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Annual</p>
+              <p className="text-sm font-semibold text-palette-100">{annualTotal}</p>
+            </div>
+          </div>
+
+          {(() => {
+            const rawIcon = subscription.icon_url;
+            const iconUrl = (() => {
+              if (!rawIcon) return null;
+              if (typeof rawIcon === 'string' && rawIcon.trim() !== '') return rawIcon;
+              if (rawIcon && typeof rawIcon === 'object') {
+                if (typeof rawIcon.url === 'string' && rawIcon.url.trim() !== '') return rawIcon.url;
+                if (typeof rawIcon.src === 'string' && rawIcon.src.trim() !== '') return rawIcon.src;
+              }
+              return null;
+            })();
+
+            return (
+              <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center mb-4 shadow-lg group-hover:shadow-xl transition-all overflow-hidden">
+                {iconUrl && !logoFailed ? (
+                  <img
+                    src={iconUrl}
+                    alt={subscription.service_name}
+                    className="w-10 h-10 object-contain"
+                    loading="lazy"
+                    onError={() => setLogoFailed(true)}
+                  />
+                ) : (
+                  <div
+                    className={`w-full h-full bg-gradient-to-br ${colors.bg} flex items-center justify-center font-bold text-lg text-white`}
+                  >
+                    {initials}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           </div>
 
           <h3 className="text-lg font-semibold text-white mb-1 truncate">
@@ -199,6 +265,25 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
             <p className="text-xs text-gray-500 mt-1">per {subscription.billing_cycle}</p>
           </div>
 
+          {daysLeft !== null && !expired && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-400">Billing cycle progress</span>
+                <span className="text-xs font-semibold text-gray-300">{progress}%</span>
+              </div>
+              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 rounded-full ${
+                    expiringSoon
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-500'
+                      : `bg-gradient-to-r ${colors.bg}`
+                  }`}
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+
           <div className="flex-1"></div>
 
           <div className="flex items-center justify-between pt-4 border-t border-white/5">
@@ -210,13 +295,32 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
             </span>
           </div>
 
-          {subscription.next_billing_date && (
-            <p className="text-xs text-gray-500 mt-3">
-              Next: {new Date(subscription.next_billing_date).toLocaleDateString()}
-            </p>
+          {daysLeft !== null && (
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className="text-gray-500">
+                {expired ? (
+                  <span className="text-red-400">Expired</span>
+                ) : daysLeft === 0 ? (
+                  <span className="text-yellow-400">Renews today</span>
+                ) : daysLeft === 1 ? (
+                  <span className="text-yellow-400">Renews tomorrow</span>
+                ) : daysLeft <= 7 ? (
+                  <span className="text-amber-400">Renews in {daysLeft} day{daysLeft !== 1 ? 's' : ''}</span>
+                ) : (
+                  <span className="text-gray-400">Renews in {daysLeft} days</span>
+                )}
+              </span>
+            </div>
           )}
 
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex gap-2 justify-end">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-white/20 bg-white/5 text-white/60 hover:text-white hover:bg-white/10 transition-smooth text-sm"
+              title="Pause subscription"
+            >
+              ⏸
+            </button>
             <button
               type="button"
               onClick={(event) => {
