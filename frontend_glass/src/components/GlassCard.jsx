@@ -7,6 +7,22 @@ const currencySymbols = {
   CZK: 'Kč',
 }
 
+// Map of service names to Clearbit logo URLs
+const clearbitLogos = {
+  'AWS': 'https://logo.clearbit.com/aws.amazon.com',
+  'Adobe Creative Cloud': 'https://logo.clearbit.com/adobe.com',
+  'Wix': 'https://logo.clearbit.com/wix.com',
+  'Google Cloud': 'https://logo.clearbit.com/google.com',
+  'Spotify': 'https://logo.clearbit.com/spotify.com',
+  'Netflix': 'https://logo.clearbit.com/netflix.com',
+  'GitHub Pro': 'https://logo.clearbit.com/github.com',
+  'ChatGPT Plus': 'https://logo.clearbit.com/openai.com',
+  'JetBrains Toolbox': 'https://logo.clearbit.com/jetbrains.com',
+  'Beatport': 'https://logo.clearbit.com/beatport.com',
+  'Cline': 'https://logo.clearbit.com/clineai.com',
+  'Native Instruments': 'https://logo.clearbit.com/native-instruments.com',
+}
+
 function formatMoney(amount, currencyCode) {
   const symbol = currencySymbols[currencyCode] || currencyCode || '$'
   const value = Number(amount || 0)
@@ -41,22 +57,15 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
 
   const handleMouseMove = (e) => {
     if (!cardRef.current) return
-
     const rect = cardRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
-
-    // Parallax position
     setMousePos({ x, y })
-
-    // 3D rotation effect - increased intensity for more visible movement
     const centerX = rect.width / 2
     const centerY = rect.height / 2
     const rotateX = (y - centerY) / 4
     const rotateY = (centerX - x) / 4
     setCardRotation({ x: rotateX, y: rotateY })
-
-    // Light position (normalized 0-100)
     setLightPos({
       x: (x / rect.width) * 100,
       y: (y / rect.height) * 100,
@@ -79,6 +88,25 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
     cancelled: 'text-gray-400 bg-gray-500/10',
   }
 
+  const getIconUrl = () => {
+    let iconUrl = null
+    if (subscription.icon_url) {
+      if (typeof subscription.icon_url === 'string' && subscription.icon_url.trim() !== '') {
+        iconUrl = subscription.icon_url
+      } else if (typeof subscription.icon_url === 'object') {
+        if (typeof subscription.icon_url.url === 'string' && subscription.icon_url.url.trim() !== '') {
+          iconUrl = subscription.icon_url.url
+        } else if (typeof subscription.icon_url.src === 'string' && subscription.icon_url.src.trim() !== '') {
+          iconUrl = subscription.icon_url.src
+        }
+      }
+    }
+    if (!iconUrl && clearbitLogos[subscription.service_name]) {
+      iconUrl = clearbitLogos[subscription.service_name]
+    }
+    return iconUrl
+  }
+
   return (
     <div
       ref={cardRef}
@@ -93,7 +121,6 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
       }}
       className="group relative h-full"
     >
-      {/* Radial light effect on hover */}
       {isHovered && (
         <div
           style={{
@@ -104,7 +131,6 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
         ></div>
       )}
 
-      {/* Glass Card */}
       <div
         className={`relative h-full glass-panel-lg rounded-2xl p-6 transition-smooth cursor-pointer overflow-hidden border ${
           isHovered
@@ -120,7 +146,6 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
           '--light-y': `${lightPos.y}%`,
         }}
       >
-        {/* Dynamic soft glare reflection overlay */}
         <div
           className="absolute inset-0 z-20 pointer-events-none rounded-2xl transition-opacity duration-300"
           style={{
@@ -134,51 +159,32 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
           }}
         ></div>
 
-        {/* Gradient overlay */}
         <div className={`absolute inset-0 opacity-0 group-hover:opacity-5 bg-gradient-to-br ${colors.bg} transition-opacity pointer-events-none rounded-2xl`}></div>
 
-        {/* Content */}
         <div className="relative z-10 flex h-full flex-col">
           <div className="absolute right-0 top-0 text-right">
             <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">Annual</p>
             <p className="text-sm font-semibold text-palette-100">{annualTotal}</p>
           </div>
 
-          {/* Logo / Icon */}
-          {(() => {
-            const rawIcon = subscription.icon_url;
-            const iconUrl = (() => {
-              if (!rawIcon) return null;
-              if (typeof rawIcon === 'string' && rawIcon.trim() !== '') return rawIcon;
-              if (rawIcon && typeof rawIcon === 'object') {
-                if (typeof rawIcon.url === 'string' && rawIcon.url.trim() !== '') return rawIcon.url;
-                if (typeof rawIcon.src === 'string' && rawIcon.src.trim() !== '') return rawIcon.src;
-              }
-              return null;
-            })();
-
-            return (
-              <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center mb-4 shadow-lg group-hover:shadow-xl transition-all overflow-hidden">
-                {iconUrl && !logoFailed ? (
-                  <img
-                    src={iconUrl}
-                    alt={subscription.service_name}
-                    className="w-10 h-10 object-contain"
-                    loading="lazy"
-                    onError={() => setLogoFailed(true)}
-                  />
-                ) : (
-                  <div
-                    className={`w-full h-full bg-gradient-to-br ${colors.bg} flex items-center justify-center font-bold text-lg text-white`}
-                  >
-                    {initials}
-                  </div>
-                )}
+          <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center mb-4 shadow-lg group-hover:shadow-xl transition-all overflow-hidden">
+            {getIconUrl() && !logoFailed ? (
+              <img
+                src={getIconUrl()}
+                alt={subscription.service_name}
+                className="w-10 h-10 object-contain"
+                loading="lazy"
+                onError={() => setLogoFailed(true)}
+              />
+            ) : (
+              <div
+                className={`w-full h-full bg-gradient-to-br ${colors.bg} flex items-center justify-center font-bold text-lg text-white`}
+              >
+                {initials}
               </div>
-            );
-          })()}
+            )}
+          </div>
 
-          {/* Name & Category */}
           <h3 className="text-lg font-semibold text-white mb-1 truncate">
             {subscription.service_name}
           </h3>
@@ -186,7 +192,6 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
             {subscription.category}
           </p>
 
-          {/* Cost */}
           <div className="mb-6">
             <div className={`text-3xl font-bold bg-gradient-to-r ${colors.bg} bg-clip-text text-transparent`}>
               {cost}
@@ -196,7 +201,6 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
 
           <div className="flex-1"></div>
 
-          {/* Details Footer */}
           <div className="flex items-center justify-between pt-4 border-t border-white/5">
             <span className="text-xs text-gray-400 capitalize">
               {subscription.billing_cycle}
@@ -206,7 +210,6 @@ export default function GlassCard({ subscription, initials, colors, delay, onOpe
             </span>
           </div>
 
-          {/* Next Billing Date */}
           {subscription.next_billing_date && (
             <p className="text-xs text-gray-500 mt-3">
               Next: {new Date(subscription.next_billing_date).toLocaleDateString()}

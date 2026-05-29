@@ -3,18 +3,18 @@ import { useState, useCallback, useEffect } from 'react'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 const demoSubscriptions = [
-  { id: 1, service_name: 'AWS', category: 'cloud', cost: 127.45, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-02', notes: 'Plan: Pay-as-you-go', source: 'demo' },
-  { id: 2, service_name: 'Adobe Creative Cloud', category: 'design', cost: 52.99, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-12', notes: 'Plan: All Apps', source: 'demo' },
-  { id: 3, service_name: 'Wix', category: 'productivity', cost: 484.17, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-05-29', source: 'demo' },
-  { id: 4, service_name: 'Google Cloud', category: 'cloud', cost: 280, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-08', source: 'demo' },
-  { id: 5, service_name: 'Spotify', category: 'music', cost: 150, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-01', source: 'demo' },
-  { id: 6, service_name: 'Netflix', category: 'streaming', cost: 136, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-04', source: 'demo' },
-  { id: 7, service_name: 'GitHub Pro', category: 'dev_tools', cost: 4, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-15', source: 'demo' },
-  { id: 8, service_name: 'ChatGPT Plus', category: 'ai', cost: 20, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-05-25', source: 'demo' },
-  { id: 9, service_name: 'JetBrains Toolbox', category: 'dev_tools', cost: 173, currency: 'USD', billing_cycle: 'yearly', status: 'active', next_billing_date: '2026-09-11', source: 'demo' },
-  { id: 10, service_name: 'Beatport', category: 'music_tools', cost: 200, currency: 'CZK', billing_cycle: 'monthly', status: 'idle', next_billing_date: '2026-06-20', source: 'demo' },
-  { id: 11, service_name: 'Cline', category: 'ai', cost: 8.75, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-05-27', source: 'demo' },
-  { id: 12, service_name: 'Native Instruments', category: 'music_tools', cost: 76, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-17', source: 'demo' },
+  { id: 1, service_name: 'AWS', category: 'cloud', cost: 127.45, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-02', notes: 'Plan: Pay-as-you-go', icon_url: 'https://logo.clearbit.com/aws.amazon.com', source: 'demo' },
+  { id: 2, service_name: 'Adobe Creative Cloud', category: 'design', cost: 52.99, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-12', notes: 'Plan: All Apps', icon_url: 'https://logo.clearbit.com/adobe.com', source: 'demo' },
+  { id: 3, service_name: 'Wix', category: 'productivity', cost: 484.17, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-05-29', icon_url: 'https://logo.clearbit.com/wix.com', source: 'demo' },
+  { id: 4, service_name: 'Google Cloud', category: 'cloud', cost: 280, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-08', icon_url: 'https://logo.clearbit.com/google.com', source: 'demo' },
+  { id: 5, service_name: 'Spotify', category: 'music', cost: 150, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-01', icon_url: 'https://logo.clearbit.com/spotify.com', source: 'demo' },
+  { id: 6, service_name: 'Netflix', category: 'streaming', cost: 136, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-04', icon_url: 'https://logo.clearbit.com/netflix.com', source: 'demo' },
+  { id: 7, service_name: 'GitHub Pro', category: 'dev_tools', cost: 4, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-15', icon_url: 'https://logo.clearbit.com/github.com', source: 'demo' },
+  { id: 8, service_name: 'ChatGPT Plus', category: 'ai', cost: 20, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-05-25', icon_url: 'https://logo.clearbit.com/openai.com', source: 'demo' },
+  { id: 9, service_name: 'JetBrains Toolbox', category: 'dev_tools', cost: 173, currency: 'USD', billing_cycle: 'yearly', status: 'active', next_billing_date: '2026-09-11', icon_url: 'https://logo.clearbit.com/jetbrains.com', source: 'demo' },
+  { id: 10, service_name: 'Beatport', category: 'music_tools', cost: 200, currency: 'CZK', billing_cycle: 'monthly', status: 'idle', next_billing_date: '2026-06-20', icon_url: 'https://logo.clearbit.com/beatport.com', source: 'demo' },
+  { id: 11, service_name: 'Cline', category: 'ai', cost: 8.75, currency: 'USD', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-05-27', icon_url: 'https://logo.clearbit.com/clineai.com', source: 'demo' },
+  { id: 12, service_name: 'Native Instruments', category: 'music_tools', cost: 76, currency: 'CZK', billing_cycle: 'monthly', status: 'active', next_billing_date: '2026-06-17', icon_url: 'https://logo.clearbit.com/native-instruments.com', source: 'demo' },
 ]
 
 function monthlyCost(subscription) {
