@@ -37,19 +37,59 @@ def get_scheduler() -> AsyncIOScheduler:
 
 # ── Job functions ─────────────────────────────────────────────────────────────
 
+async def _run_with_notification(job_name: str, coro_factory):
+    """Run a job coroutine factory, capture result/error/duration, send Gmail summary.
+
+    `coro_factory` is a no-arg callable returning a coroutine — it runs inside
+    a try/except so a single failing job never breaks the scheduler loop.
+    Notification failures are logged but never raised.
+    """
+    import time
+    from notifier import send_run_summary
+
+    started = datetime.utcnow()
+    t0 = time.monotonic()
+    error_msg = None
+    stats: dict = {}
+
+    logger.info("[cron] %s start", job_name)
+    try:
+        result = await coro_factory()
+        if isinstance(result, dict):
+            stats = {k: v for k, v in result.items() if isinstance(v, (int, float, str))}
+    except Exception as exc:
+        error_msg = f"{type(exc).__name__}: {exc}"
+        logger.error("[cron] %s failed: %s", job_name, error_msg)
+    finally:
+        duration = time.monotonic() - t0
+        status = "ok" if error_msg is None else "error"
+        try:
+            send_run_summary(
+                job_name=job_name,
+                status=status,
+                stats=stats,
+                error=error_msg,
+                started_at=started.isoformat(timespec="seconds") + "Z",
+                duration_s=duration,
+            )
+        except Exception as notif_exc:
+            logger.warning("[cron] %s notification failed: %s", job_name, notif_exc)
+        if error_msg is None:
+            logger.info("[cron] %s done in %.1fs: %s", job_name, duration, stats)
+
+
 async def job_wallet_sync():
     """Every 3 days: pull last 5 days of wallet records.
 
     2-day overlap buffer over the 3-day cycle guarantees that no transactions
     slip through due to timezone shifts or processing delays.
     """
-    logger.info("[cron] wallet sync start")
-    try:
+
+    async def _run():
         from wallet_fetcher import WalletFetcher
-        result = await WalletFetcher().sync(since_days=5)
-        logger.info("[cron] wallet sync done: %s", result)
-    except Exception as exc:
-        logger.error("[cron] wallet sync failed: %s", exc)
+        return await WalletFetcher().sync(since_days=5)
+
+    await _run_with_notification("wallet_sync", _run)
 
 
 async def job_email_sync():
@@ -58,42 +98,43 @@ async def job_email_sync():
     2-day overlap buffer over the 3-day cycle guarantees that no emails
     slip through due to timezone shifts or processing delays.
     """
-    logger.info("[cron] email sync start")
-    try:
+
+    async def _run():
         from email_fetcher import EmailFetcher
         from database import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
-            result = await EmailFetcher().process_emails(db=db, since_days=5, max_results=500)
-        logger.info("[cron] email sync done: %s", result)
-    except Exception as exc:
-        logger.error("[cron] email sync failed: %s", exc)
+            return await EmailFetcher().process_emails(db=db, since_days=5, max_results=500)
+
+    await _run_with_notification("email_sync", _run)
 
 
 async def job_wallet_match():
     """Every 3 days: cross-reference wallet records against subscriptions."""
-    logger.info("[cron] wallet match start")
-    try:
+
+    async def _run():
         from subscription_matcher import SubscriptionMatcher
         matcher = SubscriptionMatcher()
         match_result = await matcher.match_all()
         cycle_result = await matcher.infer_billing_cycles()
-        logger.info("[cron] wallet match done: %s %s", match_result, cycle_result)
-    except Exception as exc:
-        logger.error("[cron] wallet match failed: %s", exc)
+        return {"matched": match_result, "cycles": cycle_result}
+
+    await _run_with_notification("wallet_match", _run)
 
 
 async def job_discovery_sweep():
     """Weekly: surface new recurring payees as pending candidates."""
-    logger.info("[cron] discovery sweep start")
-    try:
+
+    async def _run():
         from subscription_matcher import SubscriptionMatcher
         matcher = SubscriptionMatcher()
         candidates = await matcher.find_unmatched_recurring(min_occurrences=2)
         high_confidence = [c for c in candidates if c["score"] >= 70]
-        logger.info("[cron] discovery sweep done: %d candidates, %d high-confidence",
-                    len(candidates), len(high_confidence))
-    except Exception as exc:
-        logger.error("[cron] discovery sweep failed: %s", exc)
+        return {
+            "candidates": len(candidates),
+            "high_confidence": len(high_confidence),
+        }
+
+    await _run_with_notification("discovery_sweep", _run)
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
