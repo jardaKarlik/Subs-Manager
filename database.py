@@ -75,8 +75,21 @@ class Subscription(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
+    def _iso(self, v):
+        """Coerce datetime/string/None to an ISO-8601 string for JSON."""
+        if v is None:
+            return None
+        if hasattr(v, "isoformat"):
+            return v.isoformat()
+        return str(v)  # already a string from the DB
+
     def to_dict(self):
-        """Convert model to dictionary for JSON serialization."""
+        """Convert model to dictionary for JSON serialization.
+
+        Defensive against bad data: last_payment_date / created_at / updated_at
+        may occasionally be stored as strings (e.g. from a previous bug) — we
+        coerce to ISO string instead of raising.
+        """
         return {
             "id": self.id,
             "service_name": self.service_name,
@@ -91,11 +104,11 @@ class Subscription(Base):
             "source": self.source,
             "icon_url": self.icon_url,
             "confirmed_by_wallet": self.confirmed_by_wallet,
-            "last_payment_date": self.last_payment_date.isoformat() if self.last_payment_date else None,
+            "last_payment_date": self._iso(self.last_payment_date),
             "actual_cost": self.actual_cost,
             "approval_status": self.approval_status or "approved",
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_at": self._iso(self.created_at),
+            "updated_at": self._iso(self.updated_at),
         }
 
 

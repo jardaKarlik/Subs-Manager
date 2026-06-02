@@ -210,35 +210,9 @@ async def get_subscriptions(
 
     items_out = []
     for item in items:
-        try:
-            d = item.to_dict()
-        except Exception as _row_exc:
-            import logging
-            logging.getLogger(__name__).warning(
-                "to_dict failed for sub id=%s: %s", getattr(item, "id", "?"), _row_exc
-            )
-            # Build a full stub so the Pydantic response model passes.
-            d = {
-                "id": getattr(item, "id", None),
-                "service_name": getattr(item, "service_name", "?"),
-                "category": getattr(item, "category", "other"),
-                "cost": float(getattr(item, "cost", 0) or 0),
-                "currency": getattr(item, "currency", "USD") or "USD",
-                "billing_cycle": getattr(item, "billing_cycle", "monthly") or "monthly",
-                "status": getattr(item, "status", "active") or "active",
-                "start_date": getattr(item, "start_date", None),
-                "next_billing_date": getattr(item, "next_billing_date", None),
-                "notes": getattr(item, "notes", None),
-                "source": getattr(item, "source", "manual") or "manual",
-                "icon_url": getattr(item, "icon_url", None),
-                "confirmed_by_wallet": bool(getattr(item, "confirmed_by_wallet", False)),
-                "last_payment_date": None,
-                "actual_cost": None,
-                "approval_status": "approved",
-                "created_at": None,
-                "updated_at": None,
-                "error": "serialization_failed",
-            }
+        # to_dict() is defensive — returns a full payload even for
+        # rows with bad data (e.g. last_payment_date as string).
+        d = item.to_dict()
         d["total_spent"] = total_spent_map.get(item.id)
         items_out.append(d)
 
@@ -1101,37 +1075,6 @@ async def seed_pending_candidates(db: AsyncSession = Depends(get_db)):
 
 
 # ============================================================================
-
-# Debug error handler (dev) — shows the real error in the response
-import traceback
-from fastapi.responses import JSONResponse
-
-try:
-    from fastapi.exceptions import ResponseValidationError
-except ImportError:
-    ResponseValidationError = None  # type: ignore
-
-if ResponseValidationError is not None:
-    @app.exception_handler(ResponseValidationError)
-    async def _rve_handler(request, exc):
-        import traceback as _tb
-        return JSONResponse(
-            status_code=500,
-            content={"error": "ResponseValidationError", "detail": str(exc)},
-        )
-
-@app.exception_handler(Exception)
-async def _debug_exception_handler(request, exc):
-    import logging
-    logging.getLogger(__name__).error("Unhandled: %s", traceback.format_exc())
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": type(exc).__name__,
-            "detail": str(exc),
-            "trace": traceback.format_exc().splitlines()[-20:],
-        },
-    )
 
 # Scheduler Management Endpoints
 # ============================================================================
