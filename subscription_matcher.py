@@ -1,489 +1,401 @@
 """
-Subscription cross-reference engine.
-Includes discovery mode: scores unmatched recurring wallet payees by
-subscription likelihood so genuine new subs bubble to the top.
+subscription_matcher.py
+Cross-reference BudgetBakers Wallet financial_records against subscriptions.
 
-Links financial_records to subscriptions via payee name normalization + fuzzy matching.
-Updates confirmed_by_wallet, last_payment_date, actual_cost on matched subscriptions.
-Also identifies unmatched recurring wallet transactions as new subscription candidates.
+Key rules:
+  1. PayPal dedup: PayPal payments always generate two records (PayPal + bank card).
+     We keep only the bank card record. PayPal-sourced records are skipped in all
+     spend calculations.
+  2. Flat fee identification: for each matched service, the flat fee is the MOST
+     FREQUENT amount across all non-PayPal wallet records for that service.
+     Everything else is variable/usage spend.
+  3. Matching: fuzzy name match between subscription.service_name and
+     financial_record.payee (case-insensitive, common word stripping).
 """
 
 import re
-import math
-from datetime import datetime
-from collections import defaultdict
+import logging
+from collections import Counter
+from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import select, update, func
-from database import FinancialRecord, Subscription, AsyncSessionLocal
+from sqlalchemy import select, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-# ── Payee normalization ───────────────────────────────────────────────────────
+from database import AsyncSessionLocal, Subscription, FinancialRecord
 
-# Strip these prefixes from payee strings before matching
-_STRIP_PREFIXES = [
-    r"^paypal\s*\*\s*",        # PAYPAL *NETFLIX COM
-    r"^paypal[-_][a-z]+@",     # paypal-se@spotify.com  → extract domain
-    r"^paypal@",               # paypal@beatport.com
-    r"^paymentsadmin\+.*@",    # paymentsadmin+ppmid3@patreon.com
-    r"^payment@",              # payment@native-instruments.de
-    r"^[a-z0-9._+-]+@",       # any remaining email prefix  → domain part used below
+logger = logging.getLogger("matcher")
+
+# Payee fragments that indicate a PayPal intermediary record — skip these
+PAYPAL_PAYEE_PATTERNS = [
+    r'\bpaypal\b',
+    r'\bpp\b',
+    r'paypal\s*czk',
+    r'paypal\s*(se|inc|ltd)',
+]
+PAYPAL_ACCOUNT_PATTERNS = [
+    r'paypal',
 ]
 
-# Known payee fragments → canonical service name
-# Order matters: more specific first
-_ALIASES: list[tuple[str, str]] = [
-    # Microsoft family
-    ("piemeur3",           "microsoft"),
-    ("microsoft",          "microsoft"),
-    # Google family
-    ("gpil-pl",            "google"),
-    ("google",             "google"),
-    ("youtube",            "youtube"),
-    ("stadia",             "google"),
-    # Apple / iCloud
-    ("apple",              "apple"),
-    ("icloud",             "apple"),
-    # Sony / PlayStation
-    ("siee.psn",           "playstation"),
-    ("playstation",        "playstation"),
-    ("psn",                "playstation"),
-    ("sony",               "playstation"),
-    # Meta / Facebook
-    ("fb.com",             "facebook"),
-    ("facebook",           "facebook"),
-    ("meta",               "facebook"),
-    # Anthropic / Claude
-    ("anthropic",          "anthropic"),
-    ("claude",             "claude"),
-    # Music / audio
-    ("spotify",            "spotify"),
-    ("beatport",           "beatport"),
-    ("mixcloud",           "mixcloud"),
-    ("last.fm",            "last.fm"),
-    ("lastfm",             "last.fm"),
-    ("last fm",            "last.fm"),
-    ("native-instruments", "native instruments"),
-    ("native inst",        "native instruments"),
-    ("patreon",            "patreon"),
-    # Gaming
-    ("steamgames",         "steam"),
-    ("steam",              "steam"),
-    ("epicgames",          "epic games"),
-    ("epic",               "epic games"),
-    ("xbox",               "xbox"),
-    ("nintendo",           "nintendo"),
-    # Video
-    ("netflix",            "netflix"),
-    ("disney",             "disney+"),
-    ("hulu",               "hulu"),
-    ("hbo",                "hbo"),
-    # Productivity / dev
-    ("github",             "github"),
-    ("slack",              "slack"),
-    ("notion",             "notion"),
-    ("figma",              "figma"),
-    ("adobe",              "adobe"),
-    ("canva",              "canva"),
-    ("dropbox",            "dropbox"),
-    ("zoom",               "zoom"),
-    # Web / hosting
-    ("wix",                "wix"),
-    ("cloudflare",         "cloudflare"),
-    ("namecheap",          "namecheap"),
-    ("godaddy",            "godaddy"),
-    ("vercel",             "vercel"),
-    ("heroku",             "heroku"),
-    # AI
-    ("openai",             "openai"),
-    ("midjourney",         "midjourney"),
-    ("composio",           "composio"),
-    # Other
-    ("linkedin",           "linkedin"),
-    ("twitter",            "twitter"),
-    ("amazon",             "amazon"),
-    ("aws",                "amazon web services"),
-    ("paypal",             "paypal"),
-    ("wfp",                "wfp"),           # charity — useful to keep for filtering
-]
+# Words to strip from payee names before fuzzy matching
+STRIP_WORDS = {
+    'ab', 'ag', 'as', 'bv', 'co', 'corp', 'gmbh', 'inc', 'llc', 'ltd',
+    'limited', 'pbc', 'sa', 'sro', 'technologies', 'technology', 'services',
+    'software', 'solutions', 'ireland', 'luxembourg', 'payments', 'international',
+    'online', 'digital', 'media', 'group', 'europe', 'global',
+}
+
+# Extra aliases: if payee contains key → match to subscription service name
+PAYEE_ALIASES = {
+    'spotify':       'Spotify',
+    'netflix':       'Netflix',
+    'anthropic':     'Anthropic',
+    'openai':        'OpenAI',
+    'github':        'GitHub',
+    'microsoft':     'Microsoft',
+    'google':        'Google',
+    'apple':         'Apple',
+    'adobe':         'Adobe',
+    'figma':         'Figma',
+    'notion':        'Notion',
+    'vercel':        'Vercel',
+    'digitalocean':  'DigitalOcean',
+    'cloudflare':    'Cloudflare',
+    'railway':       'Railway',
+    'beatport':      'Beatport',
+    'bandcamp':      'Bandcamp',
+    'native instruments': 'Native Instruments',
+    'patreon':       'Patreon',
+    'cline':         'Cline',
+    'openrouter':    'OpenRouter',
+}
 
 
-def _normalize_payee(raw: str) -> str:
-    """
-    Collapse a raw payee string to a lowercase service name.
-    e.g. "PAYPAL *NETFLIX COM" -> "netflix"
-         "paypal-se@spotify.com" -> "spotify"
-         "PIEMEUR3@microsoft.com" -> "microsoft"
-    """
-    s = raw.lower().strip()
-
-    # If it looks like an email, try the domain first
-    if "@" in s:
-        domain = s.split("@")[-1]                 # "spotify.com" / "native-instruments.de"
-        domain_core = domain.split(".")[0]         # "spotify" / "native-instruments"
-        # Check alias table with domain
-        for fragment, canonical in _ALIASES:
-            if fragment in domain or fragment in domain_core:
-                return canonical
-        # fall through with domain_core as the string
-        s = domain_core
-
-    # Strip PAYPAL * and similar prefixes
-    for pat in _STRIP_PREFIXES:
-        s = re.sub(pat, "", s)
-
-    # Remove trailing noise: ".com", "ltd", "s.r.o.", numbers, extra spaces
-    s = re.sub(r"\.(com|eu|de|cz|net|org|io)\b", "", s)
-    s = re.sub(r"\b(ltd|llc|gmbh|s\.r\.o\.|a\.s\.|inc|plc)\b", "", s)
-    s = re.sub(r"\s+\d+$", "", s)   # trailing numbers "STORE 4259522"
-    s = s.strip()
-
-    # Alias lookup on cleaned string
-    for fragment, canonical in _ALIASES:
-        if fragment in s:
-            return canonical
-
-    return s
-
-
-def _normalize_service(name: str) -> str:
-    """Normalize a subscription service_name for comparison."""
-    s = name.lower().strip()
-    s = re.sub(r"\b(plus|pro|premium|demo|test|subscription|sub)\b", "", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    # Alias lookup
-    for fragment, canonical in _ALIASES:
-        if fragment in s:
-            return canonical
-    return s
-
-
-def _names_match(payee_norm: str, service_norm: str) -> bool:
-    """True if the normalized strings refer to the same service."""
-    if not payee_norm or not service_norm:
-        return False
-    # Exact
-    if payee_norm == service_norm:
-        return True
-    # One contains the other (min 4 chars to avoid false positives)
-    if len(payee_norm) >= 4 and payee_norm in service_norm:
-        return True
-    if len(service_norm) >= 4 and service_norm in payee_norm:
-        return True
+def _is_paypal_record(record: FinancialRecord) -> bool:
+    """Return True if this record is a PayPal intermediary (should be deduplicated)."""
+    payee = (record.payee or '').lower()
+    account = (record.account_name or '').lower()
+    for pat in PAYPAL_PAYEE_PATTERNS:
+        if re.search(pat, payee, re.I):
+            return True
+    for pat in PAYPAL_ACCOUNT_PATTERNS:
+        if re.search(pat, account, re.I):
+            return True
     return False
 
 
-# ── Subscription likelihood scoring ──────────────────────────────────────────
-
-# Payee fragments that almost certainly mean NOT a subscription
-_NOISE_FRAGMENTS = [
-    "lidl", "kaufland", "tesco", "albert", "globus", "penny", "makro", "rohlik",
-    "super zoo", "bauhaus", "dm drog", "tk maxx", "alza",
-    "mcdonald", "kfc", "bageterie", "wolt", "pizza", "restaurace", "kebab",
-    "burger", "siciliana", "chlebomat", "delikomat", "eldorado",
-    "orlen", "petrol", "cs petrol", "fuel",
-    "air bank", "airbank", "ceska spor", "csob", "splat",
-    "rewe", "franken", "kammersteiner",
-    "skolni jidelna", "jidelna",
-    "adam karl", "tomas kold", "jaroslava",
-]
-
-# Payee fragments that strongly suggest a digital subscription
-_SUB_SIGNALS = [
-    "paypal *", "paypal-", "paypal@",
-    "spotify", "netflix", "mixcloud", "beatport", "soundcloud", "lastfm", "last.fm",
-    "steam", "roblox", "epic", "playstation", "xbox", "nintendo",
-    "anthropic", "claude", "openai", "midjourney",
-    "microsoft", "adobe", "google", "apple", "amazon",
-    "github", "slack", "notion", "figma", "canva", "dropbox", "zoom",
-    "wix", "vercel", "heroku", "cloudflare",
-    "patreon", "substack", "ifttt", "zapier",
-    "loopmasters", "splice", "plugin",
-    "subscription", ".com", "pro ", " ltd", "limited",
-]
+def _normalize_payee(payee: str) -> str:
+    """Strip legal suffixes and punctuation for fuzzy matching."""
+    s = payee.lower()
+    # Remove reference codes like P42A8271F3
+    s = re.sub(r'\b[A-Z0-9]{6,}\b', '', s)
+    # Remove words in STRIP_WORDS
+    words = [w for w in re.split(r'[\s,;|]+', s) if w and w not in STRIP_WORDS]
+    return ' '.join(words).strip()
 
 
-def _score_subscription_likelihood(
-    payee: str,
-    occurrences: int,
-    avg_amount: float,
-    min_amount: float,
-    max_amount: float,
-) -> tuple[int, list[str]]:
+def _match_payee_to_subscription(payee: str, subs: list[Subscription]) -> Optional[Subscription]:
     """
-    Score a recurring wallet payee on a 0-100 scale for subscription likelihood.
-    Returns (score, list_of_signal_strings).
+    Fuzzy match a payee string to a subscription.
+    Priority: alias dict → substring match on normalized name.
     """
-    score = 0
-    signals = []
-    p = payee.lower()
+    payee_lower = payee.lower()
+    payee_norm  = _normalize_payee(payee)
 
-    # Hard disqualify: known non-sub noise
-    for noise in _NOISE_FRAGMENTS:
-        if noise in p:
-            return 0, [f"noise:{noise}"]
+    # 1. Alias table
+    for alias, svc_name in PAYEE_ALIASES.items():
+        if alias in payee_lower:
+            for sub in subs:
+                if sub.service_name.lower() == svc_name.lower():
+                    return sub
+            # alias found but no exact sub — still return best partial
+            for sub in subs:
+                if svc_name.lower() in sub.service_name.lower():
+                    return sub
 
-    # Numeric-only payees (bank account numbers) → noise
-    if re.match(r"^[\d\s/.-]+$", payee.strip()):
-        return 0, ["noise:bank_account_number"]
+    # 2. Substring match on normalized payee vs normalized service name
+    for sub in subs:
+        sub_norm = _normalize_payee(sub.service_name)
+        if sub_norm and (sub_norm in payee_norm or payee_norm in sub_norm):
+            return sub
 
-    # Amount consistency — subscriptions charge the same amount each time
-    if avg_amount > 0:
-        variance_pct = (max_amount - min_amount) / avg_amount * 100
-        if variance_pct <= 5:
-            score += 35
-            signals.append("amount:very_consistent")
-        elif variance_pct <= 15:
-            score += 20
-            signals.append("amount:mostly_consistent")
-        elif variance_pct <= 30:
-            score += 8
-            signals.append("amount:slightly_variable")
-        else:
-            signals.append("amount:variable")
+    return None
 
-    # Reasonable subscription price range (5–5000 CZK / 1–200 USD/EUR)
-    if 5 <= avg_amount <= 5000:
-        score += 10
-        signals.append("price:in_range")
-
-    # Known sub signals in payee name
-    for sig in _SUB_SIGNALS:
-        if sig in p:
-            score += 25
-            signals.append(f"keyword:{sig.strip()}")
-            break  # only score once
-
-    # Occurrence bonus (more = more confident it's recurring)
-    if occurrences >= 4:
-        score += 15
-        signals.append(f"recurrence:{occurrences}x")
-    elif occurrences >= 3:
-        score += 8
-        signals.append(f"recurrence:{occurrences}x")
-    else:
-        score += 3
-        signals.append(f"recurrence:{occurrences}x")
-
-    return min(score, 100), signals
-
-
-# ── Main matcher ──────────────────────────────────────────────────────────────
 
 class SubscriptionMatcher:
+    """
+    Match wallet financial records to subscriptions and compute spend analytics.
+    """
 
     async def match_all(self) -> dict:
         """
-        For every unmatched FinancialRecord (expense, payee not empty):
-          1. Normalize payee
-          2. Match against all subscriptions
-          3. Update matched_subscription_id on the record
-          4. Update confirmed_by_wallet, last_payment_date, actual_cost on the sub
-
-        Returns stats dict.
+        For every non-PayPal financial record, try to match it to a subscription.
+        Updates financial_records.matched_subscription_id.
+        Also updates subscription.confirmed_by_wallet, last_payment_date, actual_cost.
         """
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                # Load all subs once
-                subs_result = await session.execute(select(Subscription))
-                subs = subs_result.scalars().all()
-                sub_map = {s.id: (_normalize_service(s.service_name), s) for s in subs}
+        matched   = 0
+        skipped   = 0
+        paypal_skip = 0
 
-                # Load unmatched expense records
-                recs_result = await session.execute(
-                    select(FinancialRecord).where(
-                        FinancialRecord.matched_subscription_id == None,  # noqa: E711
-                        FinancialRecord.record_type == "expense",
-                        FinancialRecord.payee != "",
-                    )
+        async with AsyncSessionLocal() as db:
+            # Load all subscriptions
+            sub_result = await db.execute(select(Subscription))
+            subs = sub_result.scalars().all()
+
+            # Load unmatched financial records
+            rec_result = await db.execute(
+                select(FinancialRecord).where(
+                    FinancialRecord.record_type == 'expense',
+                    FinancialRecord.matched_subscription_id == None,  # noqa
                 )
-                records = recs_result.scalars().all()
+            )
+            records = rec_result.scalars().all()
 
-                matched = 0
-                unmatched_payees: set[str] = set()
+            for rec in records:
+                # Skip PayPal intermediary records
+                if _is_paypal_record(rec):
+                    paypal_skip += 1
+                    continue
 
-                for rec in records:
-                    payee_norm = _normalize_payee(rec.payee)
-                    best_sub = None
+                sub = _match_payee_to_subscription(rec.payee or '', subs)
+                if sub:
+                    rec.matched_subscription_id = sub.id
+                    matched += 1
+                else:
+                    skipped += 1
 
-                    for sub_id, (service_norm, sub) in sub_map.items():
-                        if _names_match(payee_norm, service_norm):
-                            best_sub = sub
-                            break
+            # Update subscription wallet fields for all matched subs
+            matched_sub_ids = set()
+            all_rec_result = await db.execute(
+                select(FinancialRecord).where(
+                    FinancialRecord.record_type == 'expense',
+                    FinancialRecord.matched_subscription_id != None,  # noqa
+                )
+            )
+            all_matched = all_rec_result.scalars().all()
 
-                    if best_sub:
-                        rec.matched_subscription_id = best_sub.id
-                        matched += 1
+            # Group by subscription_id
+            by_sub: dict[int, list[FinancialRecord]] = {}
+            for rec in all_matched:
+                if _is_paypal_record(rec):
+                    continue
+                sid = rec.matched_subscription_id
+                by_sub.setdefault(sid, []).append(rec)
 
-                        # Update sub's wallet confirmation fields
-                        best_sub.confirmed_by_wallet = True
-                        if rec.date and (
-                            best_sub.last_payment_date is None
-                            or rec.date > best_sub.last_payment_date
-                        ):
-                            best_sub.last_payment_date = rec.date
-                        # actual_cost: use most recent payment amount (absolute value)
-                        if rec.amount and (best_sub.actual_cost is None):
-                            best_sub.actual_cost = abs(rec.amount)
-                    else:
-                        unmatched_payees.add(rec.payee)
+            for sub in subs:
+                recs = by_sub.get(sub.id, [])
+                if not recs:
+                    continue
+                matched_sub_ids.add(sub.id)
+                last_date = max(r.date for r in recs if r.date)
+                total     = sum(abs(r.amount) for r in recs)
+                sub.confirmed_by_wallet  = True
+                sub.last_payment_date    = last_date
+                sub.actual_cost          = round(total / max(len(recs), 1), 2)
+                # Don't change approval_status here — that's user's call
+
+            await db.commit()
 
         return {
-            "records_processed": len(records),
-            "matched": matched,
-            "unmatched": len(records) - matched,
-            "unmatched_payees_sample": sorted(unmatched_payees)[:20],
+            'matched':      matched,
+            'skipped':      skipped,
+            'paypal_skipped': paypal_skip,
+            'confirmed_subs': len(matched_sub_ids),
         }
 
     async def infer_billing_cycles(self) -> dict:
         """
-        For each subscription with matched wallet records, infer billing cycle
-        from the gaps between payment dates. Updates billing_cycle if confident.
+        For matched subscriptions, infer billing cycle from payment frequency.
+        Most frequent interval between payments → monthly / yearly / weekly.
         """
         updated = 0
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                # Get subs that have matched records
-                result = await session.execute(
-                    select(FinancialRecord.matched_subscription_id, FinancialRecord.date)
-                    .where(FinancialRecord.matched_subscription_id != None)  # noqa: E711
-                    .order_by(FinancialRecord.matched_subscription_id, FinancialRecord.date)
+
+        async with AsyncSessionLocal() as db:
+            sub_result = await db.execute(select(Subscription).where(
+                Subscription.confirmed_by_wallet == True  # noqa
+            ))
+            subs = sub_result.scalars().all()
+
+            for sub in subs:
+                rec_result = await db.execute(
+                    select(FinancialRecord.date)
+                    .where(
+                        FinancialRecord.matched_subscription_id == sub.id,
+                        FinancialRecord.record_type == 'expense',
+                    )
+                    .order_by(FinancialRecord.date)
                 )
-                rows = result.all()
+                dates = [r[0] for r in rec_result.all() if r[0]]
+                if len(dates) < 2:
+                    continue
 
-                # Group dates by subscription
-                by_sub: dict[int, list[datetime]] = defaultdict(list)
-                for sub_id, dt in rows:
-                    if dt:
-                        by_sub[sub_id].append(dt)
+                # Calculate gaps in days between consecutive payments
+                gaps = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
+                avg_gap = sum(gaps) / len(gaps)
 
-                for sub_id, dates in by_sub.items():
-                    if len(dates) < 2:
-                        continue
-                    dates.sort()
-                    gaps = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
-                    avg_gap = sum(gaps) / len(gaps)
+                if avg_gap <= 10:
+                    inferred = 'weekly'
+                elif avg_gap <= 45:
+                    inferred = 'monthly'
+                elif avg_gap <= 100:
+                    inferred = 'monthly'   # bi-monthly rounds to monthly
+                elif avg_gap <= 200:
+                    inferred = 'yearly'
+                else:
+                    inferred = 'yearly'
 
-                    if avg_gap <= 10:
-                        cycle = "weekly"
-                    elif avg_gap <= 35:
-                        cycle = "monthly"
-                    elif avg_gap <= 100:
-                        cycle = "quarterly"
-                    elif avg_gap <= 400:
-                        cycle = "yearly"
-                    else:
-                        continue  # not confident enough
+                if inferred != sub.billing_cycle:
+                    sub.billing_cycle = inferred
+                    updated += 1
 
-                    sub = await session.get(Subscription, sub_id)
-                    if sub and sub.billing_cycle != cycle:
-                        sub.billing_cycle = cycle
-                        updated += 1
+            await db.commit()
 
-        return {"billing_cycles_updated": updated}
+        return {'billing_cycles_updated': updated}
+
+    async def get_spend_breakdown(self, subscription_id: int) -> dict:
+        """
+        Return flat fee vs variable spend breakdown for a subscription.
+
+        flat_fee   = most frequent amount across non-PayPal records
+        variable   = all other charges (usage, add-ons, extra credits)
+        """
+        async with AsyncSessionLocal() as db:
+            rec_result = await db.execute(
+                select(FinancialRecord).where(
+                    FinancialRecord.matched_subscription_id == subscription_id,
+                    FinancialRecord.record_type == 'expense',
+                )
+            )
+            records = [r for r in rec_result.scalars().all() if not _is_paypal_record(r)]
+
+        if not records:
+            return {'flat_fee': 0, 'variable_total': 0, 'payments': []}
+
+        # Most frequent amount = flat fee
+        amounts      = [round(abs(r.amount), 2) for r in records]
+        freq         = Counter(amounts)
+        flat_fee     = freq.most_common(1)[0][0]
+        flat_count   = freq[flat_fee]
+        variable_sum = sum(abs(r.amount) for r in records if round(abs(r.amount), 2) != flat_fee)
+        total        = sum(abs(r.amount) for r in records)
+
+        payments = sorted([
+            {
+                'date':     r.date.isoformat() if r.date else None,
+                'amount':   round(abs(r.amount), 2),
+                'currency': r.currency,
+                'payee':    r.payee,
+                'type':     'flat' if round(abs(r.amount), 2) == flat_fee else 'variable',
+                'account':  r.account_name,
+            }
+            for r in records
+        ], key=lambda x: x['date'] or '', reverse=True)
+
+        return {
+            'subscription_id':  subscription_id,
+            'flat_fee':         flat_fee,
+            'flat_fee_count':   flat_count,
+            'variable_total':   round(variable_sum, 2),
+            'total_spend':      round(total, 2),
+            'currency':         records[0].currency if records else 'CZK',
+            'record_count':     len(records),
+            'payments':         payments,
+        }
 
     async def find_unmatched_recurring(self, min_occurrences: int = 2) -> list[dict]:
         """
-        Return wallet payees that appear multiple times as expenses
-        but have no matched subscription — candidates for new sub discovery.
-        Each result is scored for subscription likelihood (0-100).
-        Results sorted by score descending so real subs surface first.
+        Find wallet payees that appear >= min_occurrences times but have no
+        matched subscription. Score them by subscription likelihood.
         """
-        async with AsyncSessionLocal() as session:
-            # Get aggregate stats per payee
-            agg_result = await session.execute(
-                select(
-                    FinancialRecord.payee,
-                    FinancialRecord.currency,
-                    func.count(FinancialRecord.id).label("count"),
-                    func.avg(FinancialRecord.amount).label("avg_amount"),
-                    func.min(FinancialRecord.amount).label("min_amount"),
-                    func.max(FinancialRecord.amount).label("max_amount"),
-                    func.max(FinancialRecord.date).label("last_seen"),
-                    func.min(FinancialRecord.date).label("first_seen"),
+        async with AsyncSessionLocal() as db:
+            rec_result = await db.execute(
+                select(FinancialRecord).where(
+                    FinancialRecord.record_type == 'expense',
+                    FinancialRecord.matched_subscription_id == None,  # noqa
                 )
-                .where(
-                    FinancialRecord.matched_subscription_id == None,  # noqa: E711
-                    FinancialRecord.record_type == "expense",
-                    FinancialRecord.payee != "",
-                )
-                .group_by(FinancialRecord.payee, FinancialRecord.currency)
-                .having(func.count(FinancialRecord.id) >= min_occurrences)
             )
-            rows = agg_result.all()
+            records = [r for r in rec_result.scalars().all() if not _is_paypal_record(r)]
+
+        # Group by normalised payee
+        by_payee: dict[str, list] = {}
+        for rec in records:
+            key = _normalize_payee(rec.payee or 'unknown')
+            by_payee.setdefault(key, []).append(rec)
 
         candidates = []
-        for r in rows:
-            avg = abs(r.avg_amount or 0)
-            min_a = abs(r.min_amount or 0)
-            max_a = abs(r.max_amount or 0)
-            score, signals = _score_subscription_likelihood(
-                payee=r.payee,
-                occurrences=r.count,
-                avg_amount=avg,
-                min_amount=min_a,
-                max_amount=max_a,
-            )
+        for payee_norm, recs in by_payee.items():
+            if len(recs) < min_occurrences:
+                continue
+
+            amounts    = [round(abs(r.amount), 2) for r in recs]
+            avg_amount = round(sum(amounts) / len(amounts), 2)
+            score      = min(100, len(recs) * 20 + (50 if avg_amount > 0 else 0))
+
             candidates.append({
-                "payee": r.payee,
-                "normalized": _normalize_payee(r.payee),
-                "occurrences": r.count,
-                "avg_amount": round(avg, 2),
-                "currency": r.currency,
-                "last_seen": r.last_seen.isoformat() if r.last_seen else None,
-                "first_seen": r.first_seen.isoformat() if r.first_seen else None,
-                "score": score,
-                "signals": signals,
+                'payee':        recs[0].payee,
+                'payee_norm':   payee_norm,
+                'occurrences':  len(recs),
+                'avg_amount':   avg_amount,
+                'currency':     recs[0].currency,
+                'score':        score,
+                'last_seen':    max(r.date for r in recs if r.date).isoformat() if any(r.date for r in recs) else None,
             })
 
-        # Sort by score desc, then occurrences desc
-        candidates.sort(key=lambda x: (-x["score"], -x["occurrences"]))
+        candidates.sort(key=lambda x: x['score'], reverse=True)
         return candidates
 
-    async def promote_candidate(self, payee: str, service_name: str, category: str = "other") -> dict:
+    async def promote_candidate(self, payee: str, service_name: str, category: str = 'other') -> dict:
         """
-        Promote a wallet payee to a subscription entry.
-        Creates the sub, then re-runs match_all so its records get linked.
+        Promote an unmatched recurring payee to a confirmed subscription.
+        Creates a new Subscription and matches all existing records to it.
         """
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                # Find the financial records for this payee to get cost/currency
-                recs_result = await session.execute(
-                    select(FinancialRecord)
-                    .where(
-                        FinancialRecord.payee == payee,
-                        FinancialRecord.record_type == "expense",
-                    )
-                    .order_by(FinancialRecord.date.desc())
-                    .limit(5)
+        async with AsyncSessionLocal() as db:
+            # Find matching records
+            rec_result = await db.execute(
+                select(FinancialRecord).where(
+                    FinancialRecord.record_type == 'expense',
+                    FinancialRecord.matched_subscription_id == None,  # noqa
                 )
-                recs = recs_result.scalars().all()
-                if not recs:
-                    return {"error": "No wallet records found for this payee"}
+            )
+            records = [
+                r for r in rec_result.scalars().all()
+                if not _is_paypal_record(r)
+                and _normalize_payee(r.payee or '') == _normalize_payee(payee)
+            ]
 
-                avg_cost = round(abs(sum(r.amount for r in recs) / len(recs)), 2)
-                currency = recs[0].currency
-                last_date = recs[0].date
+            if not records:
+                return {'error': f'No unmatched records found for payee: {payee}'}
 
-                new_sub = Subscription(
-                    service_name=service_name,
-                    category=category,
-                    cost=avg_cost,
-                    currency=currency,
-                    billing_cycle="monthly",
-                    status="active",
-                    start_date=recs[-1].date.strftime("%Y-%m-%d") if recs[-1].date else None,
-                    source="wallet_discovery",
-                    confirmed_by_wallet=True,
-                    last_payment_date=last_date,
-                    actual_cost=avg_cost,
-                )
-                session.add(new_sub)
+            amounts  = [round(abs(r.amount), 2) for r in records]
+            flat_fee = Counter(amounts).most_common(1)[0][0]
+            last_pay = max(r.date for r in records if r.date)
 
-        # Re-run matching to link the records
-        match_result = await self.match_all()
+            # Create subscription
+            new_sub = Subscription(
+                service_name=service_name,
+                category=category,
+                cost=flat_fee,
+                currency=records[0].currency,
+                billing_cycle='monthly',
+                status='active',
+                source='wallet_discovery',
+                confirmed_by_wallet=True,
+                last_payment_date=last_pay,
+                actual_cost=flat_fee,
+                approval_status='approved',
+                start_date=min(r.date for r in records if r.date).strftime('%Y-%m-%d'),
+            )
+            db.add(new_sub)
+            await db.flush()
+
+            for rec in records:
+                rec.matched_subscription_id = new_sub.id
+
+            await db.commit()
+
         return {
-            "created": service_name,
-            "avg_cost": avg_cost,
-            "currency": currency,
-            **match_result,
+            'created_subscription_id': new_sub.id,
+            'service_name':            service_name,
+            'records_matched':         len(records),
+            'flat_fee':                flat_fee,
         }

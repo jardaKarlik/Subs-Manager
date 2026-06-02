@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import String, Float, DateTime, Boolean, Integer, JSON, select, delete, update, func, ForeignKey
+from sqlalchemy import String, Float, DateTime, select, delete, update, func
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,12 +23,6 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     f"sqlite+aiosqlite:///{_DB_PATH}"
 )
-
-# Fix Railway's auto-generated URL: asyncpg driver required for SQLAlchemy async
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-elif DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
 # Create async engine
 engine = create_async_engine(
@@ -64,12 +58,6 @@ class Subscription(Base):
     notes: Mapped[str] = mapped_column(String(1000), nullable=True)
     source: Mapped[str] = mapped_column(String(100), default="manual")
     icon_url: Mapped[str] = mapped_column(String(500), nullable=True)
-    # Wallet cross-reference fields
-    confirmed_by_wallet: Mapped[bool] = mapped_column(Boolean, default=False)
-    last_payment_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    actual_cost: Mapped[float] = mapped_column(Float, nullable=True)
-    # Approval workflow: pending (wallet_discovery) → approved | dismissed
-    approval_status: Mapped[str] = mapped_column(String(20), default="approved")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -90,48 +78,8 @@ class Subscription(Base):
             "notes": self.notes,
             "source": self.source,
             "icon_url": self.icon_url,
-            "confirmed_by_wallet": self.confirmed_by_wallet,
-            "last_payment_date": self.last_payment_date.isoformat() if self.last_payment_date else None,
-            "actual_cost": self.actual_cost,
-            "approval_status": self.approval_status or "approved",
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
-
-
-class FinancialRecord(Base):
-    """Financial transactions from BudgetBakers Wallet for cross-referencing."""
-    __tablename__ = "financial_records"
-
-    id: Mapped[str] = mapped_column(String(255), primary_key=True)  # Wallet record UUID
-    date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
-    currency: Mapped[str] = mapped_column(String(10), nullable=False)
-    payee: Mapped[str] = mapped_column(String(500), nullable=True)
-    category_id: Mapped[str] = mapped_column(String(255), nullable=True)
-    category_name: Mapped[str] = mapped_column(String(255), nullable=True)
-    account_id: Mapped[str] = mapped_column(String(255), nullable=True)
-    account_name: Mapped[str] = mapped_column(String(255), nullable=True)
-    note: Mapped[str] = mapped_column(String(1000), nullable=True)
-    labels: Mapped[list] = mapped_column(JSON, default=list)
-    record_type: Mapped[str] = mapped_column(String(50), nullable=True)  # expense / income
-    matched_subscription_id: Mapped[int] = mapped_column(Integer, nullable=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "date": self.date.isoformat() if self.date else None,
-            "amount": self.amount,
-            "currency": self.currency,
-            "payee": self.payee,
-            "category_name": self.category_name,
-            "account_name": self.account_name,
-            "note": self.note,
-            "labels": self.labels,
-            "record_type": self.record_type,
-            "matched_subscription_id": self.matched_subscription_id,
-            "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }
 
 

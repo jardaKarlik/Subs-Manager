@@ -1,20 +1,18 @@
 """
 Intelligent Email Parser for Subscription Manager
 Multi-layer detection engine with confidence scoring.
-Processes real emails from Gmail, Outlook, and IMAP.
 """
 
 import re
-import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
-from urllib.parse import urlparse
 
-# ─── Layer 1: Known Provider Mappings ───────────────────────────────────────
+# ─── Known Provider Mappings ─────────────────────────────────────────────────
 
 KNOWN_PROVIDERS = {
     # Cloud & Dev
     'aws': ('Amazon Web Services', 'cloud'),
+    'amazon web services': ('Amazon Web Services', 'cloud'),
     'google': ('Google', 'cloud'),
     'google cloud': ('Google Cloud', 'cloud'),
     'microsoft': ('Microsoft', 'dev_tools'),
@@ -26,6 +24,7 @@ KNOWN_PROVIDERS = {
     'firebase': ('Firebase', 'cloud'),
     'heroku': ('Heroku', 'cloud'),
     'netlify': ('Netlify', 'cloud'),
+    'railway': ('Railway', 'cloud'),
     'linear': ('Linear', 'dev_tools'),
     'figma': ('Figma', 'dev_tools'),
     'notion': ('Notion', 'productivity'),
@@ -56,34 +55,35 @@ KNOWN_PROVIDERS = {
     'openrouter': ('OpenRouter', 'ai'),
     # Streaming
     'netflix': ('Netflix', 'streaming'),
-    'spotify': ('Spotify', 'music'),
     'apple tv': ('Apple TV+', 'streaming'),
     'disney': ('Disney+', 'streaming'),
     'hbo': ('Max', 'streaming'),
     'youtube': ('YouTube', 'streaming'),
+    # Music
+    'spotify': ('Spotify', 'music'),
     'tidal': ('Tidal', 'music'),
     'soundcloud': ('SoundCloud', 'music'),
     'apple music': ('Apple Music', 'music'),
     'amazon music': ('Amazon Music', 'music'),
-    # Music purchases & tools
     'beatport': ('Beatport', 'music'),
     'last.fm': ('Last.fm', 'music'),
     'lastfm': ('Last.fm', 'music'),
     'discogs': ('Discogs', 'music'),
     'bandcamp': ('Bandcamp', 'music'),
+    # Music tools
     'traktor': ('Native Instruments', 'music_tools'),
+    'native instruments': ('Native Instruments', 'music_tools'),
     'serato': ('Serato', 'music_tools'),
     'ableton': ('Ableton', 'music_tools'),
     'rekordbox': ('Pioneer DJ', 'music_tools'),
     'mixed in key': ('Mixed In Key', 'music_tools'),
     'izotope': ('iZotope', 'music_tools'),
-    # Productivity & Misc
+    # Design & Productivity
     'adobe': ('Adobe', 'design'),
     'canva': ('Canva', 'design'),
     'wix': ('Wix', 'productivity'),
     'squarespace': ('Squarespace', 'productivity'),
     'wordpress': ('WordPress', 'productivity'),
-    'notion': ('Notion', 'productivity'),
     'obsidian': ('Obsidian', 'productivity'),
     'evernote': ('Evernote', 'productivity'),
     'todoist': ('Todoist', 'productivity'),
@@ -95,14 +95,38 @@ KNOWN_PROVIDERS = {
     'steam': ('Steam', 'gaming'),
     'nintendo': ('Nintendo', 'gaming'),
     'epic games': ('Epic Games', 'gaming'),
-    # Payments (map to actual service)
+    # Payment processors (no service mapping)
     'paypal': (None, 'payment_processor'),
     'google pay': (None, 'payment_processor'),
     'apple pay': (None, 'payment_processor'),
     'stripe': (None, 'payment_processor'),
 }
 
-# Payment processor keywords that indicate a payment notification
+# Domains/names that are payment gateways — NOT the actual subscription service
+PAYMENT_GATEWAY_NAMES = {
+    'braintree', 'braintreegateway', 'fastspring', 'paddle',
+    'chargebee', 'recurly', 'chargify', '2checkout', 'adyen',
+    'mollie', 'klarna', 'worldpay', 'authorize.net',
+}
+
+# Czech/Slovak words that are common false-positive subjects
+FALSE_POSITIVE_SUBJECTS = {
+    'vase', 'vaše', 'váše', 'váš', 'vas',   # Czech "your"
+    'objednavka', 'objednávka',               # Czech "order"
+    'dodani', 'dodání',                        # Czech "delivery"
+    'doruceni', 'doručení',                    # Czech "delivery"
+    'zasilka', 'zásilka',                      # Czech "package"
+}
+
+# Domains that are NOT subscription services (food, retail, etc.)
+NON_SUBSCRIPTION_DOMAINS = {
+    'apetitonline', 'apetit', 'rohlik', 'kosik', 'tesco',
+    'lidl', 'kaufland', 'billa', 'albert', 'globus',
+    'superzoo', 'zoohit', 'mall', 'alza', 'czc',
+    'heureka', 'sleviste', 'slevomat',
+    'fakturoid', 'pohoda',  # invoicing software — not subscriptions
+}
+
 PAYMENT_PROCESSORS = {
     'paypal': r'paypal',
     'google pay': r'google\s*(pay|payment)',
@@ -111,17 +135,16 @@ PAYMENT_PROCESSORS = {
     'bank': r'bank|card transaction|transaction notification|platba kartou|odchozí platba|zaúčtovaná platba',
 }
 
-# Czech bank patterns
 CZECH_BANKS = {
     'airbank': r'air\s*bank',
     'raiffeisen': r'raiffeisen|rb\s*bank',
-    'čsob': r'čsob|csob',
-    'kb': r'komerční\s*banka|komerckni banka',
+    'csob': r'čsob|csob',
+    'kb': r'komerční\s*banka',
     'moneta': r'moneta',
     'fio': r'fio\s*banka',
 }
 
-# ─── Layer 2: Detection Keywords ────────────────────────────────────────────
+# ─── Keywords ────────────────────────────────────────────────────────────────
 
 SUBSCRIPTION_POSITIVE_KEYWORDS = [
     'invoice', 'receipt', 'subscription', 'billing', 'payment',
@@ -133,7 +156,6 @@ SUBSCRIPTION_POSITIVE_KEYWORDS = [
     'payment received', 'payment processed', 'billed',
     'invoice ready', 'receipt for your payment', 'you sent a payment',
     'you paid', 'payment successful', 'charged to',
-    # Czech
     'úhrada', 'daňový doklad', 'faktura', 'platba', 'předplatné',
     'měsíční', 'roční', 'částka', 'zúčtování',
 ]
@@ -150,14 +172,14 @@ PAYMENT_INDICATOR_KEYWORDS = [
 FREE_SERVICE_KEYWORDS = [
     'welcome to', 'thank you for joining', 'thank you for registering',
     'account verified', 'verification complete', 'welcome aboard',
-    'thanks for signing up', 'you\'re all set',
+    'thanks for signing up', "you're all set",
     'authorization successful', 'connected your account', 'app authorized',
     'account connected', 'login successful', 'new sign-in',
 ]
 
 ACCOUNT_CREATION_KEYWORDS = [
     'welcome to', 'thank you for joining', 'thank you for registering',
-    'account created', 'account verified', 'verification complete', 
+    'account created', 'account verified', 'verification complete',
     'welcome aboard', 'thanks for signing up', 'your account is now active',
     'get started with', 'welcome to the community', 'registration successful',
 ]
@@ -175,9 +197,6 @@ MUSIC_PURCHASE_HINTS = [
     'download', 'track', 'release', 'label', 'wav', 'mp3', 'order', 'purchase',
 ]
 
-# Search query groups for mailbox-side discovery. These keep initial tests small
-# while covering subscription confirmations, payment notifications, free active
-# accounts, and music purchases/tools.
 SEARCH_QUERY_GROUPS = {
     'subscription': [
         'subject:(subscription OR invoice OR receipt OR billing OR renewal)',
@@ -199,42 +218,57 @@ SEARCH_QUERY_GROUPS = {
     ],
 }
 
-# ─── Layer 3: Amount Extraction ─────────────────────────────────────────────
+# ─── Amount patterns ─────────────────────────────────────────────────────────
+# CRITICAL: Each pattern must be preceded by a currency symbol or keyword.
+# Never match bare numbers without currency context — avoids grabbing
+# account numbers, reference IDs, dates etc.
 
 AMOUNT_PATTERNS = [
-    # $15.99, $ 15.99, USD 15.99
-    r'(?:\$|USD\s*)\s*(\d[\d\s]*(?:[.,]\d{1,2})?)',
-    # €19,00, € 19.00, EUR 19.00
-    r'(?:€|EUR\s*)\s*(\d[\d\s]*(?:[.,]\d{1,2})?)',
-    # £10.99, GBP 10.99
-    r'(?:£|GBP\s*)\s*(\d[\d\s]*(?:[.,]\d{1,2})?)',
-    # Kč 209,00, 209,00 Kč, CZK 209.00
-    r'(?:Kč\s*|CZK\s*)\s*(\d[\d\s]*(?:[.,]\d{1,2})?)',
-    r'(\d[\d\s]*(?:[.,]\d{1,2})?)\s*(?:\s*Kč|CZK)',
-    # Generic fallback - amount followed by currency word
-    r'(?:paid|amount|total|charged)\s*[:\s]*(?:\$|€|£)?\s*(\d[\d\s]*(?:[.,]\d{1,2})?)',
+    # Currency symbol BEFORE number: $15.99  €19,00  £10.99
+    r'(?<!\d)(?:\$|USD\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
+    r'(?<!\d)(?:€|EUR\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
+    r'(?<!\d)(?:£|GBP\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
+    # CZK: Kč 299,00  or  299,00 Kč  or  CZK 299
+    r'(?:Kč\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
+    r'(?<!\d)(\d{1,6}(?:[.,]\d{1,2})?)\s?Kč(?!\d)',
+    r'(?:CZK\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
+    # Explicit keyword context: "paid 15.99" / "total: 15.99" / "amount: 15.99"
+    r'(?:paid|amount|total|charged|billed)\s*[:\s]*(?:\$|€|£|Kč)?(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
 ]
 
 CURRENCY_MAP = {
-    '$': 'USD', 'usd': 'USD', 'USD': 'USD',
-    '€': 'EUR', 'eur': 'EUR', 'EUR': 'EUR',
-    '£': 'GBP', 'gbp': 'GBP', 'GBP': 'GBP',
-    'kč': 'CZK', 'czk': 'CZK', 'CZK': 'CZK',
+    '$': 'USD', 'usd': 'USD',
+    '€': 'EUR', 'eur': 'EUR',
+    '£': 'GBP', 'gbp': 'GBP',
+    'kč': 'CZK', 'czk': 'CZK',
 }
 
-# ─── Layer 4: Billing Cycle Detection ───────────────────────────────────────
+# Approx FX to USD (for stats normalisation only — not stored)
+FX_TO_USD = {
+    'USD': 1.0,
+    'EUR': 1.08,
+    'GBP': 1.27,
+    'CZK': 0.044,
+}
 
 BILLING_CYCLE_PATTERNS = {
     'monthly': r'\b(monthly|month|per month|/month|měsíční|měsíčně)\b',
-    'yearly': r'\b(yearly|yearly|annual|per year|/year|roční|ročně)\b',
-    'weekly': r'\b(weekly|week|per week)\b',
-    'daily': r'\b(daily|per day|/day)\b',    # Narrower: exclude standalone "day"
-    'one-time': r'\b(one.time|one time|single purchase|purchase)\b',
+    'yearly':  r'\b(yearly|annual|per year|/year|roční|ročně)\b',
+    'weekly':  r'\b(weekly|week|per week)\b',
+    'daily':   r'\b(per day|/day|daily charge)\b',
+    'one-time': r'\b(one.time|one time|single purchase)\b',
+}
+
+# ─── Max reasonable cost per currency (sanity cap) ──────────────────────────
+MAX_COST = {
+    'USD': 5000,
+    'EUR': 5000,
+    'GBP': 5000,
+    'CZK': 50000,   # ~2000 USD
 }
 
 
 class EmailClassifier:
-    """Multi-layer subscription email classifier with confidence scoring."""
 
     def __init__(self):
         self.compiled_patterns = {
@@ -246,155 +280,114 @@ class EmailClassifier:
             'negative': re.compile(r'\b(' + '|'.join(NEGATIVE_KEYWORDS) + r')\b', re.IGNORECASE),
         }
 
-    def extract_plan_name(self, text: str, service_name: str) -> str:
-        """
-        Extract plan name from email body.
-        Examples: "Spotify Premium", "GitHub Pro", "Adobe Creative Cloud"
-        """
-        text_lower = text.lower()
-
-        # Common plan keywords to look for
-        plan_keywords = [
-            "premium", "pro", "plus", "family", "enterprise", "standard", 
-            "basic", "professional", "max", "ultimate", "personal", "student",
-            "business", "starter", "growth", "team", "teams"
-        ]
-        
-        # Specific patterns
-        plan_patterns = [
-            r"plan:\s*([a-z0-9]+(?:\s[a-z0-9]+){0,2})(?:\.|,|\s\s|\n|\r|$)",
-            r"subscription:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
-            r"tier:\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
-            r"version\s*[:=]?\s*([a-z0-9\s]+?)(?:\.|,|\s\s|\n|\r|$)",
-            r"([a-z0-9\s]+?)\s+plan\b",
-        ]
-
-        # 1. Try keyword-based matching first (more precise for "Spotify Premium")
-        for kw in plan_keywords:
-            if re.search(r"\b" + kw + r"\b", text_lower):
-                return kw.title()
-
-        # 2. Try regex patterns
-        for pattern in plan_patterns:
-            matches = re.findall(pattern, text_lower, re.IGNORECASE)
-            for match in matches:
-                plan = match.strip().title() if isinstance(match, str) else match[0].strip().title()
-                # Filter out common false positives and long strings
-                if plan and len(plan) < 30 and plan not in ["The", "Your", "A", "An", "And", "Or", "Is", "This", "Of"]:
-                    return plan
-
-        return "Standard"
-
     def classify(self, subject: str, sender: str, body: str) -> Dict:
-        """
-        Classify an email and return structured result with confidence.
-        Returns dict with: is_subscription, confidence, service_name, category,
-                          cost, currency, billing_cycle, is_free, source_type, plan_name
-        """
-        text = f"{subject} {body}"
-        text_lower = text.lower()
+        text        = f"{subject} {body}"
+        text_lower  = text.lower()
         subject_lower = subject.lower()
-        sender_lower = sender.lower()
+        sender_lower  = sender.lower()
 
-        score = 0.0
+        score   = 0.0
         reasons = []
 
-        # ── Layer 1: Sender Analysis ──
-        sender_domain = self._extract_domain(sender)
+        # ── Sender / domain analysis ──────────────────────────────────
+        sender_domain  = self._extract_domain(sender)
+        domain_base    = sender_domain.split('.')[0] if sender_domain else ''
         provider_match = self._match_provider(sender_lower, sender_domain)
+
+        # Hard reject: non-subscription domain
+        if domain_base in NON_SUBSCRIPTION_DOMAINS:
+            return self._empty_result(subject, sender_domain)
+
+        # Hard reject: false-positive subject word
+        first_word = subject_lower.split()[0] if subject_lower.split() else ''
+        if first_word in FALSE_POSITIVE_SUBJECTS:
+            return self._empty_result(subject, sender_domain)
 
         if provider_match:
             score += 0.25
             reasons.append(f"known_provider:{provider_match['key']}")
 
-        # Check payment processor
         payment_proc = self._detect_payment_processor(sender_lower, text_lower)
         if payment_proc:
             score += 0.20
             reasons.append(f"payment_processor:{payment_proc}")
 
-        # Check Czech banks
         czech_bank = self._detect_czech_bank(sender_lower, text_lower)
         if czech_bank:
             score += 0.20
             reasons.append(f"czech_bank:{czech_bank}")
 
-        # ── Layer 2: Keyword Scoring ──
+        # ── Keywords ──────────────────────────────────────────────────
         positive_hits = len(self.compiled_patterns['positive'].findall(text))
-        if positive_hits > 0:
+        if positive_hits:
             score += min(0.10 * positive_hits, 0.30)
             reasons.append(f"positive_keywords:{positive_hits}")
 
         payment_hits = len(self.compiled_patterns['payment_indicator'].findall(text))
-        if payment_hits > 0:
+        if payment_hits:
             score += min(0.15 * payment_hits, 0.25)
             reasons.append(f"payment_indicators:{payment_hits}")
 
         free_hits = len(self.compiled_patterns['free_service'].findall(text))
-        if free_hits > 0:
+        if free_hits:
             score += 0.10
             reasons.append(f"free_service_keywords:{free_hits}")
 
         negative_hits = len(self.compiled_patterns['negative'].findall(text))
-        if negative_hits > 0:
+        if negative_hits:
             score -= min(0.15 * negative_hits, 0.35)
             reasons.append(f"negative_keywords:{negative_hits}")
 
-        # ── Layer 3: Amount Detection ──
+        # ── Amount ────────────────────────────────────────────────────
         amount, currency = self._extract_amount(text)
         if amount > 0:
             score += 0.15
             reasons.append(f"amount_detected:{amount} {currency}")
 
-        # ── Layer 4: Subject-specific patterns ──
-        if re.search(r'\b(receipt|invoice|payment)\b', subject_lower, re.I):
+        # ── Subject patterns ──────────────────────────────────────────
+        if re.search(r'\b(receipt|invoice|payment)\b', subject_lower):
             score += 0.15
             reasons.append("subject_billing_term")
-
-        if re.search(r'^welcome to\b', subject_lower, re.I):
+        if re.search(r'^welcome to\b', subject_lower):
             score += 0.10
             reasons.append("subject_welcome")
-
-        if re.search(r'^thank you for (subscribing|joining|your purchase)', subject_lower, re.I):
+        if re.search(r'^thank you for (subscribing|joining|your purchase)', subject_lower):
             score += 0.15
             reasons.append("subject_thankyou")
 
-        # ── Determine Classification ──
-        confidence = max(0.0, min(1.0, score))
-        is_subscription = confidence >= 0.35
-        is_free = amount == 0 and free_hits > 0 and confidence >= 0.30
+        confidence       = max(0.0, min(1.0, score))
+        is_subscription  = confidence >= 0.35
+        is_free          = amount == 0 and free_hits > 0 and confidence >= 0.30
 
-        # If it's a payment processor email, extract the actual service from body
+        # ── Resolve service name ──────────────────────────────────────
         service_name = None
-        category = 'other'
+        category     = 'other'
 
         if payment_proc and not provider_match:
-            # Extract service from PayPal/Google Pay body
-            extracted_name = self._extract_service_from_payment_body(text, payment_proc)
-            if extracted_name:
-                provider_match = self._match_provider_by_name(extracted_name)
-                if provider_match:
-                    service_name = provider_match['name']
-                    category = provider_match['category']
-                else:
-                    service_name = extracted_name
+            extracted = self._extract_service_from_payment_body(text, payment_proc)
+            if extracted:
+                # Reject if extracted name is a payment gateway
+                if extracted.lower().replace(' ', '') in PAYMENT_GATEWAY_NAMES:
+                    extracted = None
+            if extracted:
+                pm = self._match_provider_by_name(extracted)
+                service_name = pm['name'] if pm else extracted
+                category     = pm['category'] if pm else 'other'
         elif provider_match:
             service_name = provider_match['name']
-            category = provider_match['category']
-        else:
-            # Try to extract from domain
+            category     = provider_match['category']
+
+        if not service_name:
             service_name = self._service_from_domain(sender_domain)
 
-        # Detect billing cycle
+        # Reject gateway names that slipped through as service_name
+        if service_name and service_name.lower().replace(' ', '') in PAYMENT_GATEWAY_NAMES:
+            is_subscription = False
+
         billing_cycle = self._detect_billing_cycle(text)
+        plan_name     = self.extract_plan_name(text, service_name or 'Unknown')
+        category      = self._refine_category(service_name, category, text_lower)
 
-        # Extract plan name from email body ✅ FIX #3
-        plan_name = self.extract_plan_name(text, service_name or 'Unknown')
-
-        # Refine category based on service name and content
-        category = self._refine_category(service_name, category, text_lower)
-
-        # Determine source type
         if is_free:
             source_type = 'free_active'
         elif payment_proc:
@@ -404,247 +397,169 @@ class EmailClassifier:
 
         return {
             'is_subscription': is_subscription,
-            'confidence': round(confidence, 2),
-            'is_free': is_free,
-            'service_name': service_name or 'Unknown Service',
-            'category': category,
-            'cost': amount,
-            'currency': currency,
-            'plan_name': plan_name,
-            'billing_cycle': billing_cycle,
-            'source_type': source_type,
+            'confidence':       round(confidence, 2),
+            'is_free':          is_free,
+            'service_name':     service_name or 'Unknown Service',
+            'category':         category,
+            'cost':             amount,
+            'currency':         currency,
+            'plan_name':        plan_name,
+            'billing_cycle':    billing_cycle,
+            'source_type':      source_type,
             'payment_processor': payment_proc,
-            'reasons': reasons,
-            'sender_domain': sender_domain,
+            'reasons':          reasons,
+            'sender_domain':    sender_domain,
         }
 
+    def _empty_result(self, subject: str, domain: str) -> Dict:
+        return {
+            'is_subscription': False, 'confidence': 0.0, 'is_free': False,
+            'service_name': 'Unknown Service', 'category': 'other',
+            'cost': 0.0, 'currency': 'USD', 'plan_name': 'Standard',
+            'billing_cycle': 'monthly', 'source_type': 'rejected',
+            'payment_processor': None, 'reasons': ['hard_reject'],
+            'sender_domain': domain,
+        }
+
+    def extract_plan_name(self, text: str, service_name: str) -> str:
+        text_lower = text.lower()
+        plan_keywords = [
+            "premium", "pro", "plus", "family", "enterprise", "standard",
+            "basic", "professional", "max", "ultimate", "personal", "student",
+            "business", "starter", "growth", "team", "teams", "hobby",
+        ]
+        for kw in plan_keywords:
+            if re.search(r'\b' + kw + r'\b', text_lower):
+                return kw.title()
+        return 'Standard'
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
     def _extract_domain(self, sender: str) -> str:
-        """Extract domain from sender email."""
-        match = re.search(r'@([\w.-]+)', sender)
-        if match:
-            return match.group(1).lower()
-        return ''
+        m = re.search(r'@([\w.-]+)', sender)
+        return m.group(1).lower() if m else ''
 
     def _match_provider(self, sender_lower: str, domain: str) -> Optional[Dict]:
-        """Match sender against known providers."""
         domain_base = domain.split('.')[0] if domain else ''
-
         for key, (name, category) in KNOWN_PROVIDERS.items():
             if category == 'payment_processor':
                 continue
-            if key in sender_lower or key in domain or key in domain_base:
+            if key in sender_lower or key in domain or key == domain_base:
                 return {'key': key, 'name': name, 'category': category}
         return None
 
     def _match_provider_by_name(self, name: str) -> Optional[Dict]:
-        """Match a service name against known providers."""
         name_lower = name.lower()
-        for key, (prov_name, category) in KNOWN_PROVIDERS.items():
+        for key, (pname, category) in KNOWN_PROVIDERS.items():
             if category == 'payment_processor':
                 continue
-            if key in name_lower or (prov_name and prov_name.lower() in name_lower):
-                return {'key': key, 'name': prov_name, 'category': category}
+            if key in name_lower or (pname and pname.lower() in name_lower):
+                return {'key': key, 'name': pname, 'category': category}
         return None
 
     def _detect_payment_processor(self, sender: str, text: str) -> Optional[str]:
-        """Detect if email is from a payment processor."""
         for name, pattern in PAYMENT_PROCESSORS.items():
             if re.search(pattern, sender, re.I) or re.search(pattern, text, re.I):
                 return name
         return None
 
     def _detect_czech_bank(self, sender: str, text: str) -> Optional[str]:
-        """Detect Czech bank payment notifications."""
         for name, pattern in CZECH_BANKS.items():
             if re.search(pattern, sender, re.I) or re.search(pattern, text, re.I):
                 return name
         return None
 
-    def _extract_service_from_payment_body(self, text: str, processor: str) -> Optional[str]:
-        """Extract the actual service name from payment processor email body."""
-        patterns = {
-            'paypal': [
-                r'to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*(?:View|Receipt|Details|Transaction|$)|[.!?\n])',
-                r'payment to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*(?:View|Receipt|Details|Transaction|$)|[.!?\n])',
-                r'You paid\s+(?:\$|€|£|Kč)?[\d\s,.]+\s*(?:USD|EUR|CZK|GBP)?\s+to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*(?:View|Receipt|Details|Transaction|$)|[.!?\n])',
-            ],
-            'google pay': [
-                r'payment to\s+([A-Z][A-Za-z0-9\s.&-]{1,40})(?:\s*[.!?]|\s*$)',
-            ],
-            'stripe': [
-                r'receipt from\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:\s*#|[.!?\n]|$)',
-                r'paid\s+(?:\$|€|£|Kč)?[\d\s,.]+\s*(?:USD|EUR|CZK|GBP)?\s+to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,60}?)(?:[.!?\n]|$)',
-            ],
-        }
-
-        for pattern in patterns.get(processor, []):
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                service = match.group(1).strip()
-                # Clean up common suffixes and trailing punctuation
-                service = re.sub(r'\s+(LLC|Ltd|Inc|GmbH|S\.r\.o\.|a\.s\.|s\.r\.o|Limited|PBC)\.?$', '', service, flags=re.I)
-                service = re.sub(r'\s+(Luxembourg|Ireland|Payments)$', '', service, flags=re.I)
-                service = re.sub(r'\s+', ' ', service)
-                service = re.sub(r'[,;:#-]+$', '', service).strip()
-                return service
-        return None
-
-    def _refine_category(self, service_name: Optional[str], category: str, text_lower: str) -> str:
-        """Refine broad categories using service and message context."""
-        service_lower = (service_name or '').lower()
-        combined = f"{service_lower} {text_lower}"
-
-        if any(tool in combined for tool in ('serato', 'traktor', 'ableton', 'rekordbox', 'native instruments', 'izotope')):
-            return 'music_tools'
-
-        if any(music in combined for music in ('beatport', 'discogs', 'bandcamp')):
-            return 'music'
-
-        if category == 'music' and any(hint in combined for hint in MUSIC_PURCHASE_HINTS):
-            return 'music'
-
-        return category
-
-    def build_search_queries(self, since_days: int = 365, groups: Optional[List[str]] = None) -> List[str]:
-        """Build Gmail-style discovery queries for targeted mailbox sampling/backfill."""
-        selected = groups or list(SEARCH_QUERY_GROUPS.keys())
-        after = (datetime.now() - timedelta(days=since_days)).strftime('%Y/%m/%d')
-        queries = []
-        for group in selected:
-            for query in SEARCH_QUERY_GROUPS.get(group, []):
-                queries.append(f"({query}) after:{after}")
-        return queries
-
     def _extract_amount(self, text: str) -> Tuple[float, str]:
-        """Extract monetary amount and currency from text."""
-        amount_matches = []
-        # (placeholder removed)
-
-        # (placeholder removed)
+        """
+        Extract first reasonable monetary amount with currency context.
+        Returns (amount, currency). Never grabs bare numbers without
+        a currency symbol or payment keyword.
+        """
+        candidates = []
         for pattern in self.compiled_patterns['amount']:
-            for match in pattern.finditer(text):
-                amount_str = match.group(1)
-                # Clean and parse
-                amount_str = amount_str.replace(' ', '').replace(',', '.')
+            for m in pattern.finditer(text):
+                raw = m.group(1).replace(' ', '').replace(',', '.')
                 try:
-                    amount = float(amount_str)
+                    amount = float(raw)
                 except ValueError:
                     continue
+                if amount <= 0:
+                    continue
+                ctx      = text[max(0, m.start()-15):m.end()+5]
+                currency = self._detect_currency(ctx)
+                cap      = MAX_COST.get(currency, 5000)
+                if amount > cap:
+                    continue  # sanity cap — rejects account numbers
+                candidates.append((m.start(), amount, currency))
 
-                # Determine currency from context
-                start = max(0, match.start() - 10)
-                context = text[start:match.end()]
-                currency = self._detect_currency(context)
-
-                # Take first reasonable amount by position, not largest
-                amount_matches.append((match.start(), amount, currency))
-                # (line merged into amount_matches above)
-                # (line merged into amount_matches above)
-
-        # Return first reasonable amount by position (not largest)
-        amount_matches.sort(key=lambda x: x[0])
-        for _, amount, currency in amount_matches:
-            if amount > 0.01:
-                return amount, currency
+        # Return first (earliest in text) valid candidate
+        candidates.sort(key=lambda x: x[0])
+        for _, amount, currency in candidates:
+            return amount, currency
         return 0.0, 'USD'
 
     def _detect_currency(self, context: str) -> str:
-        """Detect currency from text context."""
-        context_lower = context.lower()
+        ctx_lower = context.lower()
         for symbol, code in CURRENCY_MAP.items():
-            if symbol in context or symbol.lower() in context_lower:
+            if symbol in context or symbol in ctx_lower:
                 return code
         return 'USD'
 
     def _detect_billing_cycle(self, text: str) -> str:
-        """Detect billing cycle from text."""
         for cycle, pattern in self.compiled_patterns['cycle'].items():
             if pattern.search(text):
                 return cycle
-        return 'monthly'  # Default
+        return 'monthly'
 
-    def _service_from_domain(self, domain: str) -> str:
-        """Extract service name from domain."""
+    def _service_from_domain(self, domain: str) -> Optional[str]:
         if not domain:
             return None
         parts = domain.split('.')
-        name = parts[0]
-        # Common cleanups
-        if name.lower() in ('mail', 'email', 'notify', 'noreply', 'no-reply', 'service', 'support',
-                            'updates', 'hello', 'info', 'contact', 'news', 'newsletter', 'invoice',
-                            'billing', 'no-reply'):
-            if len(parts) > 1:
-                name = parts[1]
+        name  = parts[0]
+        skip  = {
+            'mail', 'email', 'notify', 'noreply', 'no-reply', 'service',
+            'support', 'updates', 'hello', 'info', 'contact', 'news',
+            'newsletter', 'invoice', 'billing', 'receipts', 'accounts',
+            'payments', 'transaction', 'notification', 'notifications',
+        }
+        if name.lower() in skip and len(parts) > 1:
+            name = parts[1]
         return name.title()
 
+    def _extract_service_from_payment_body(self, text: str, processor: str) -> Optional[str]:
+        patterns = {
+            'paypal': [
+                r'You paid\s+(?:[^\s]+\s+){0,3}to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&,-]{1,50}?)(?:\s*(?:View|Receipt|Details)|[.!?\n]|$)',
+                r'payment to\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,50}?)(?:[.!?\n]|$)',
+            ],
+            'stripe': [
+                r'receipt from\s+([A-Z][A-Za-z0-9][A-Za-z0-9\s.&-]{1,50}?)(?:\s*#|[.!?\n]|$)',
+            ],
+        }
+        for pattern in patterns.get(processor, []):
+            m = re.search(pattern, text, re.IGNORECASE)
+            if m:
+                svc = m.group(1).strip()
+                svc = re.sub(r'\s+(LLC|Ltd|Inc|GmbH|S\.r\.o\.|Limited|PBC|Ireland|Luxembourg|Payments)\.?$', '', svc, flags=re.I)
+                svc = re.sub(r'[,;:#-]+$', '', svc).strip()
+                if svc:
+                    return svc
+        return None
 
-# ─── Test against real emails ───────────────────────────────────────────────
+    def _refine_category(self, service_name: Optional[str], category: str, text_lower: str) -> str:
+        sn = (service_name or '').lower()
+        combined = f"{sn} {text_lower}"
+        if any(t in combined for t in ('serato', 'traktor', 'ableton', 'rekordbox', 'native instruments', 'izotope')):
+            return 'music_tools'
+        if any(t in combined for t in ('beatport', 'discogs', 'bandcamp')):
+            return 'music'
+        return category
 
-def test_classifier():
-    """Test the classifier against the 15 real emails fetched from Gmail."""
-    classifier = EmailClassifier()
-
-    test_cases = [
-        ("Welcome to Prism Ray Online Services (PROS)", "pros@notify.prismray.io",
-         "Welcome to Prism Ray Online Services. Thank you for registering your account and verifying your email."),
-        ("You sent an automatic payment to Last.Fm Ltd", "service@intl.paypal.com",
-         "Jaroslav Karlik, here's your receipt. Thank you for your payment to Last.Fm Ltd. Monthly recurring Last.fm subscription."),
-        ("Your receipt from Anthropic, PBC #2599-4121-6975", "invoice+statements@mail.anthropic.com",
-         "Your receipt from Anthropic, PBC"),
-        ("Welcome to MuAPI – Unlock 20% OFF Your First Subscription!", "support@muapi.ai",
-         "Welcome to MuAPI. To help you get started, we have a special offer."),
-        ("Thank you for joining Ollama", "hello@ollama.com",
-         "Thanks for joining Ollama. Download Ollama."),
-        ("Receipt for Your Payment to Wix.com Luxembourg S...", "service@intl.paypal.com",
-         "Jaroslav Karlik, you successfully sent a payment. You paid €19,00 EUR to Wix.com"),
-        ("Receipt for Your Payment to Beatport LLC", "service@intl.paypal.com",
-         "Jaroslav Karlik, you successfully sent a payment. You paid $15,99 USD to Beatport LLC"),
-        ("Receipt for Your Payment to Microsoft Payments", "service@intl.paypal.com",
-         "Jaroslav Karlik, you successfully sent a payment. You paid Kč30,00 CZK to Microsoft Payments"),
-        ("Thank You For Your Purchase", "sony@txn-email03.playstation.com",
-         "Your PlayStation Store transaction was successful."),
-        ("Receipt for Your Payment to Google", "service@intl.paypal.com",
-         "Jaroslav Karlik, you successfully sent a payment. You paid Kč209,00 CZK to Google"),
-        ("Welcome to Claude Skills Hub!", "updates@mail.claudeskills.info",
-         "Thanks for subscribing to All Updates!"),
-        ("Receipt for Your Payment to Microsoft Payments", "service@intl.paypal.com",
-         "Jaroslav Karlik, you successfully sent a payment. You paid Kč39,00 CZK to Microsoft Payments"),
-        ("Receipt for Your Payment to Microsoft Payments", "service@intl.paypal.com",
-         "Jaroslav Karlik, you successfully sent a payment. You paid Kč150,00 CZK to Microsoft Payments"),
-        ("Action required: your billing account 01918D-8EF7BF-E946C6", "Cloud-noreply@google.com",
-         "Action required. You are receiving this email because you are a Google Cloud customer."),
-        ("Receipt for Your Payment to Google Payment Irela...", "service@intl.paypal.com",
-         "Jaroslav Karlik, you successfully sent a payment. You paid Kč59,99 CZK to Google Payment Ireland"),
-    ]
-
-    print("=" * 100)
-    print("EMAIL CLASSIFICATION RESULTS")
-    print("=" * 100)
-
-    detected = 0
-    for i, (subject, sender, body) in enumerate(test_cases, 1):
-        result = classifier.classify(subject, sender, body)
-        status = "✅ SUB" if result['is_subscription'] else "❌ SKIP"
-        free_tag = " [FREE]" if result['is_free'] else ""
-        cost = f" {result['cost']:.2f} {result['currency']}" if result['cost'] > 0 else ""
-
-        print(f"\n{i:2d}. {status}{free_tag} | conf={result['confidence']:.2f} | {result['service_name']} ({result['category']}){cost}")
-        print(f"    Subject: {subject[:65]}")
-        print(f"    Sender:  {sender[:50]}")
-        print(f"    Type:    {result['source_type']} | cycle={result['billing_cycle']}")
-        print(f"    Reasons: {', '.join(result['reasons'][:4])}")
-
-        if result['is_subscription']:
-            detected += 1
-
-    print(f"\n{'=' * 100}")
-    print(f"DETECTED: {detected}/{len(test_cases)} emails as subscriptions")
-    print(f"{'=' * 100}")
-
-    return detected
-
-
-if __name__ == "__main__":
-    test_classifier()
-
-
+    def build_search_queries(self, since_days: int = 365, groups: Optional[List[str]] = None) -> List[str]:
+        selected = groups or list(SEARCH_QUERY_GROUPS.keys())
+        after    = (datetime.now() - timedelta(days=since_days)).strftime('%Y/%m/%d')
+        queries  = []
+        for group in selected:
+            for query in SEARCH_QUERY_GROUPS.get(group, []):
+                queries.append(f"({query}) after:{after}")
+        return queries

@@ -113,6 +113,9 @@ class StatsResponse(BaseModel):
     by_category: dict
     by_status: dict
 
+    class Config:
+        extra = "allow"
+
 
 # ============================================================================
 # Startup / Shutdown Events
@@ -121,14 +124,20 @@ class StatsResponse(BaseModel):
 @app.on_event("startup")
 async def startup():
     await init_db()
-    from scheduler import start_scheduler
-    start_scheduler()
+    try:
+        from scheduler import start_scheduler
+        start_scheduler()
+    except Exception:
+        pass
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    from scheduler import stop_scheduler
-    stop_scheduler()
+    try:
+        from scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
 
 
 # ============================================================================
@@ -138,7 +147,7 @@ async def shutdown():
 @app.get("/api/subscriptions", response_model=PaginatedSubscriptions)
 async def get_subscriptions(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
+    page_size: int = Query(20, ge=1, le=500),
     category: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     billing_cycle: Optional[str] = Query(None),
@@ -178,8 +187,8 @@ async def get_subscriptions(
         count_query = count_query.where(Subscription.approval_status == approval_status)
     else:
         # By default exclude dismissed subs from the main listing
-        query = query.where(Subscription.approval_status != "dismissed")
-        count_query = count_query.where(Subscription.approval_status != "dismissed")
+        query = query.where((Subscription.approval_status != "dismissed") | (Subscription.approval_status == None))
+        count_query = count_query.where((Subscription.approval_status != "dismissed") | (Subscription.approval_status == None))
 
     # Apply sorting
     sort_column = getattr(Subscription, sort_by)
@@ -1138,3 +1147,8 @@ if __name__ == "__main__":
     load_dotenv()
     port = int(os.getenv("API_PORT", "8000"))
     uvicorn.run("api:app", host="0.0.0.0", port=port, reload=True)
+
+
+
+
+
