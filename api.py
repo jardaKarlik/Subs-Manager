@@ -1084,6 +1084,24 @@ async def seed_pending_candidates(db: AsyncSession = Depends(get_db)):
 
 
 # ============================================================================
+
+# Debug error handler (dev) — shows the real error in the response
+import traceback
+from starlette.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def _debug_exception_handler(request, exc):
+    import logging
+    logging.getLogger(__name__).error("Unhandled: %s", traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": type(exc).__name__,
+            "detail": str(exc),
+            "trace": traceback.format_exc().splitlines()[-20:],
+        },
+    )
+
 # Scheduler Management Endpoints
 # ============================================================================
 
