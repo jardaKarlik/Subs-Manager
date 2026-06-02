@@ -303,31 +303,48 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Subscription))
     subs = result.scalars().all()
 
+    # Monthly-equivalent cost per sub, in the sub's own currency.
+    # one-time purchases are NOT counted as monthly (they're a one-off hit).
+    # daily is treated as a small recurring charge.
+    def _monthly_equiv(s):
+        cost = s.cost or 0
+        if s.billing_cycle == "yearly":  return cost / 12
+        if s.billing_cycle == "weekly":  return cost * 52 / 12
+        if s.billing_cycle == "daily":   return cost * 30
+        if s.billing_cycle == "one-time":return 0  # excluded from monthly
+        return cost  # monthly or unknown
+
     total_monthly = 0.0
     total_yearly = 0.0
     by_category = {}
     by_status = {}
+    by_currency = {}   # {"CZK": {"count": N, "monthly": X}, "USD": {...}, ...}
+    total_monthly_usd = 0.0
     confirmed_count = 0
+    recurring_count = 0  # excludes one-time
 
     for s in subs:
         cost = s.cost or 0
+        cur = (s.currency or "USD").upper()
 
         by_category[s.category] = by_category.get(s.category, {"count": 0, "monthly_cost": 0})
         by_category[s.category]["count"] += 1
         by_status[s.status] = by_status.get(s.status, 0) + 1
 
-        if s.billing_cycle == "monthly":
-            total_monthly += cost
-            total_yearly += cost * 12
-            by_category[s.category]["monthly_cost"] += cost
-        elif s.billing_cycle == "yearly":
-            total_yearly += cost
-            total_monthly += cost / 12
-            by_category[s.category]["monthly_cost"] += cost / 12
-        else:
-            total_monthly += cost
-            by_category[s.category]["monthly_cost"] += cost
+        mo = _monthly_equiv(s)
+        yr = mo * 12
 
+        by_category[s.category]["monthly_cost"] += mo
+        total_monthly += mo
+        total_yearly += yr
+        total_monthly_usd += to_usd(mo, cur)
+
+        by_currency[cur] = by_currency.get(cur, {"count": 0, "monthly": 0.0})
+        by_currency[cur]["count"] += 1
+        by_currency[cur]["monthly"] += mo
+
+        if s.billing_cycle != "one-time":
+            recurring_count += 1
         if s.confirmed_by_wallet:
             confirmed_count += 1
 
@@ -359,10 +376,16 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
     return {
         "total_subscriptions": len(subs),
-        "total_monthly_cost": round(total_monthly, 2),
+        "recurring_count": recurring_count,
+        "one_time_count": len(subs) - recurring_count,
+        "total_monthly_cost": round(total_monthly, 2),  # mixed-currency (for reference)
+        "total_monthly_usd": round(total_monthly_usd, 2),  # normalized to USD
         "total_yearly_cost": round(total_yearly, 2),
         "by_category": by_category,
         "by_status": by_status,
+        "by_currency": by_currency,
+        "base_currency": "USD",
+        "data_as_of": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         # Wallet-enriched fields
         "confirmed_count": confirmed_count,
         "unconfirmed_count": len(subs) - confirmed_count,
@@ -378,22 +401,40 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Subscription))
     subs = result.scalars().all()
     
-    total_monthly = 0
-    total_yearly = 0
-    
+    total_monthly = 0.0
+    total_yearly = 0.0
+    total_monthly_usd = 0.0
+    by_currency = {}
+    recurring = 0
+
     for s in subs:
         cost = s.cost or 0
-        if s.billing_cycle == "monthly":
-            total_monthly += cost
-            total_yearly += cost * 12
-        elif s.billing_cycle == "yearly":
-            total_yearly += cost
-            total_monthly += cost / 12
-    
+        cur = (s.currency or "USD").upper()
+        if s.billing_cycle == "yearly":   mo = cost / 12
+        elif s.billing_cycle == "weekly": mo = cost * 52 / 12
+        elif s.billing_cycle == "daily":  mo = cost * 30
+        elif s.billing_cycle == "one-time": mo = 0
+        else:                              mo = cost
+
+        total_monthly += mo
+        total_yearly += mo * 12
+        total_monthly_usd += to_usd(mo, cur)
+        if s.billing_cycle != "one-time":
+            recurring += 1
+        by_currency[cur] = by_currency.get(cur, 0.0) + mo
+
     return {
         "total_subscriptions": len(subs),
+        "recurring_count": recurring,
+        "one_time_count": len(subs) - recurring,
+        # Mixed-currency total (legacy) — sum of raw values across currencies.
+        # Kept for backward compatibility; prefer total_monthly_usd for display.
         "estimated_monthly_cost": round(total_monthly, 2),
-        "estimated_yearly_cost": round(total_yearly, 2)
+        "estimated_monthly_usd": round(total_monthly_usd, 2),
+        "estimated_yearly_cost": round(total_yearly, 2),
+        "by_currency": {k: round(v, 2) for k, v in by_currency.items()},
+        "base_currency": "USD",
+        "data_as_of": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
 
 
