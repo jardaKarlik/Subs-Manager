@@ -76,7 +76,7 @@ def _record_to_model(rec: dict, account_map: dict) -> FinancialRecord:
 
     return FinancialRecord(
         id=rec["id"],
-        date=_parse_dt(rec.get("recordDate")),
+        date=(_parse_dt(rec.get("recordDate")) or datetime.utcnow()).strftime("%Y-%m-%d"),
         amount=rec.get("amount", {}).get("value", 0.0),
         currency=rec.get("amount", {}).get("currencyCode", "CZK"),
         payee=rec.get("counterParty") or "",
@@ -88,7 +88,7 @@ def _record_to_model(rec: dict, account_map: dict) -> FinancialRecord:
         labels=json.dumps(rec.get("labels", [])),
         record_type=record_type,
         matched_subscription_id=None,
-        fetched_at=datetime.utcnow(),
+        fetched_at=datetime.utcnow().isoformat(),
     )
 
 
