@@ -224,9 +224,9 @@ class SubscriptionMatcher:
                 _last = last_date if hasattr(last_date, 'date') else _dt.fromisoformat(str(last_date)[:10])
                 _recent = sorted(recs, key=lambda r: r.date or _dt.min)[-1]
                 _cost = round(abs(_recent.amount or 0), 2)
+                _lp_str = _last.strftime("%Y-%m-%d") if hasattr(_last, "strftime") else str(_last)[:10]
                 await db.execute(
-                    _text("UPDATE subscriptions SET confirmed_by_wallet=1, last_payment_date=:lp, actual_cost=:ac, updated_at=:ua WHERE id=:id"),
-                    {"lp": _last.strftime("%Y-%m-%d") if hasattr(_last, "strftime") else str(_last)[:10], "ac": _cost, "ua": _dt.utcnow(), "id": sub.id}
+                    _text(f"UPDATE subscriptions SET confirmed_by_wallet=1, last_payment_date='{_lp_str}', actual_cost={_cost}, updated_at=now() WHERE id={sub.id}")
                 )
                 # Don't change approval_status here — that's user's call
 
