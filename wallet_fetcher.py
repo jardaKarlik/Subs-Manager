@@ -85,7 +85,7 @@ def _record_to_model(rec: dict, account_map: dict) -> FinancialRecord:
         account_id=account_id,
         account_name=account_name,
         note=rec.get("note") or "",
-        labels=rec.get("labels", []),
+        labels=json.dumps(rec.get("labels", [])),
         record_type=record_type,
         matched_subscription_id=None,
         fetched_at=datetime.utcnow(),

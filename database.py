@@ -142,7 +142,7 @@ class FinancialRecord(Base):
     """Wallet transaction records from BudgetBakers."""
     __tablename__ = "financial_records"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
     date: Mapped[str] = mapped_column(String(20), nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), nullable=True)
