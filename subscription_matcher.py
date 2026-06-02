@@ -225,7 +225,17 @@ class SubscriptionMatcher:
                     )
                     .order_by(FinancialRecord.date)
                 )
-                dates = [r[0] for r in rec_result.all() if r[0]]
+                from datetime import datetime as _dt
+                raw_dates = [r[0] for r in rec_result.all() if r[0]]
+                dates = []
+                for d in raw_dates:
+                    if isinstance(d, str):
+                        try:
+                            dates.append(_dt.fromisoformat(d[:10]))
+                        except ValueError:
+                            pass
+                    else:
+                        dates.append(d)
                 if len(dates) < 2:
                     continue
 

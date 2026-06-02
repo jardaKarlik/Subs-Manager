@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import String, Float, DateTime, select, delete, update, func
+from sqlalchemy import String, Float, DateTime, Integer, Text, select, delete, update, func
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -62,6 +62,10 @@ class Subscription(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    confirmed_by_wallet: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
+    last_payment_date: Mapped[str] = mapped_column(String(10), nullable=True)
+    actual_cost: Mapped[float] = mapped_column(Float, nullable=True)
+    approval_status: Mapped[str] = mapped_column(String(20), nullable=True)
 
     def to_dict(self):
         """Convert model to dictionary for JSON serialization."""
@@ -80,6 +84,10 @@ class Subscription(Base):
             "icon_url": self.icon_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "confirmed_by_wallet": self.confirmed_by_wallet,
+            "last_payment_date": self.last_payment_date,
+            "actual_cost": self.actual_cost,
+            "approval_status": self.approval_status,
         }
 
 
@@ -122,6 +130,26 @@ class SubscriptionEvent(Base):
             "message_id": self.message_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class FinancialRecord(Base):
+    """Wallet transaction records from BudgetBakers."""
+    __tablename__ = "financial_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    date: Mapped[str] = mapped_column(String(20), nullable=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), nullable=True)
+    payee: Mapped[str] = mapped_column(String(255), nullable=True)
+    category_id: Mapped[str] = mapped_column(String(100), nullable=True)
+    category_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    account_id: Mapped[str] = mapped_column(String(100), nullable=True)
+    account_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    note: Mapped[str] = mapped_column(Text, nullable=True)
+    labels: Mapped[str] = mapped_column(Text, nullable=True)
+    record_type: Mapped[str] = mapped_column(String(50), nullable=True)
+    matched_subscription_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    fetched_at: Mapped[str] = mapped_column(String(30), nullable=True)
 
 
 async def init_db():

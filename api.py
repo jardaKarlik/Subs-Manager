@@ -386,7 +386,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         "unconfirmed_count": len(subs) - confirmed_count,
         "actual_monthly_spend": actual_monthly_spend,
         "wallet_record_count": wallet_record_count,
-        "wallet_sync_last": wallet_sync_last.isoformat() if wallet_sync_last else None,
+        "wallet_sync_last": wallet_sync_last if isinstance(wallet_sync_last, str) else (wallet_sync_last.isoformat() if wallet_sync_last else None),
     }
 
 
