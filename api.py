@@ -177,9 +177,13 @@ async def get_subscriptions(
         query = query.where(Subscription.approval_status == approval_status)
         count_query = count_query.where(Subscription.approval_status == approval_status)
     else:
-        # By default exclude dismissed subs from the main listing
-        query = query.where(Subscription.approval_status != "dismissed")
-        count_query = count_query.where(Subscription.approval_status != "dismissed")
+        # By default exclude dismissed subs from the main listing.
+        # COALESCE treats legacy NULL approval_status as an empty string
+        # so they are NOT silently dropped (NULL != "dismissed" is NULL,
+        # which excludes the row from the result set).
+        _approval = func.coalesce(Subscription.approval_status, "")
+        query = query.where(_approval != "dismissed")
+        count_query = count_query.where(_approval != "dismissed")
 
     # Apply sorting
     sort_column = getattr(Subscription, sort_by)
