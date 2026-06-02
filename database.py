@@ -162,6 +162,20 @@ async def init_db():
     """Initialize database - create all tables and apply column migrations."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        from sqlalchemy import text
+        # Fix financial_records.id type: old schema created it as INTEGER, must be VARCHAR for UUIDs
+        try:
+            result = await conn.execute(text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name='financial_records' AND column_name='id'"
+            ))
+            row = result.fetchone()
+            if row and row[0] in ('integer', 'bigint'):
+                await conn.execute(text("DROP TABLE IF EXISTS financial_records"))
+                await conn.run_sync(Base.metadata.create_all)
+        except Exception:
+            pass
+
         # Add columns that may be missing from older schema deployments
         migrations = [
             "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS confirmed_by_wallet INTEGER DEFAULT 0",
@@ -173,7 +187,7 @@ async def init_db():
         ]
         for sql in migrations:
             try:
-                await conn.execute(__import__('sqlalchemy').text(sql))
+                await conn.execute(text(sql))
             except Exception:
                 pass  # Column may already exist or table may not exist yet
 
