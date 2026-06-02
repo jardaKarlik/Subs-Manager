@@ -159,9 +159,23 @@ class FinancialRecord(Base):
 
 
 async def init_db():
-    """Initialize database - create all tables."""
+    """Initialize database - create all tables and apply column migrations."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add columns that may be missing from older schema deployments
+        migrations = [
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS confirmed_by_wallet INTEGER DEFAULT 0",
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_payment_date VARCHAR(10)",
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS actual_cost FLOAT",
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)",
+            "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS matched_subscription_id INTEGER",
+            "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS fetched_at VARCHAR(30)",
+        ]
+        for sql in migrations:
+            try:
+                await conn.execute(__import__('sqlalchemy').text(sql))
+            except Exception:
+                pass  # Column may already exist or table may not exist yet
 
 
 async def get_db():
