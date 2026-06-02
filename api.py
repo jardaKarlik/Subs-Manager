@@ -202,32 +202,11 @@ async def get_subscriptions(
     result = await db.execute(query)
     items = result.scalars().all()
 
-    # Batch-fetch total_spent per subscription from wallet records.
-    # Wrapped in try/except so a failure in the wallet enrichment
-    # never breaks the main listing — list still works without spend.
-    sub_ids = [s.id for s in items]
+    # total_spent enrichment is disabled here — it was causing 500s
+    # on Railway for page_size >= 23 (likely a JSON/JSONB indexing issue
+    # with the labels column on financial_records). The UI can fetch
+    # per-subscription spend from /api/wallet-spend instead.
     total_spent_map: dict[int, float] = {}
-    if sub_ids:
-        try:
-            spend_q = (
-                select(
-                    FinancialRecord.matched_subscription_id,
-                    func.sum(FinancialRecord.amount).label("total"),
-                )
-                .where(
-                    FinancialRecord.matched_subscription_id.in_(sub_ids),
-                    FinancialRecord.record_type == "expense",
-                )
-                .group_by(FinancialRecord.matched_subscription_id)
-            )
-            spend_rows = await db.execute(spend_q)
-            for sid, total_amt in spend_rows.all():
-                total_spent_map[sid] = round(abs(total_amt or 0), 2)
-        except Exception as _spend_exc:
-            import logging
-            logging.getLogger(__name__).warning(
-                "total_spent enrichment failed: %s", _spend_exc
-            )
 
     pages = (total + page_size - 1) // page_size
 
