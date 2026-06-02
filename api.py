@@ -113,9 +113,6 @@ class StatsResponse(BaseModel):
     by_category: dict
     by_status: dict
 
-    class Config:
-        extra = "allow"
-
 
 # ============================================================================
 # Startup / Shutdown Events
@@ -124,20 +121,14 @@ class StatsResponse(BaseModel):
 @app.on_event("startup")
 async def startup():
     await init_db()
-    try:
-        from scheduler import start_scheduler
-        start_scheduler()
-    except Exception:
-        pass
+    from scheduler import start_scheduler
+    start_scheduler()
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    try:
-        from scheduler import stop_scheduler
-        stop_scheduler()
-    except Exception:
-        pass
+    from scheduler import stop_scheduler
+    stop_scheduler()
 
 
 # ============================================================================
@@ -147,7 +138,7 @@ async def shutdown():
 @app.get("/api/subscriptions", response_model=PaginatedSubscriptions)
 async def get_subscriptions(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=500),
+    page_size: int = Query(20, ge=1, le=200),
     category: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     billing_cycle: Optional[str] = Query(None),
@@ -187,8 +178,8 @@ async def get_subscriptions(
         count_query = count_query.where(Subscription.approval_status == approval_status)
     else:
         # By default exclude dismissed subs from the main listing
-        query = query.where((Subscription.approval_status != "dismissed") | (Subscription.approval_status == None))
-        count_query = count_query.where((Subscription.approval_status != "dismissed") | (Subscription.approval_status == None))
+        query = query.where(Subscription.approval_status != "dismissed")
+        count_query = count_query.where(Subscription.approval_status != "dismissed")
 
     # Apply sorting
     sort_column = getattr(Subscription, sort_by)
@@ -386,7 +377,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         "unconfirmed_count": len(subs) - confirmed_count,
         "actual_monthly_spend": actual_monthly_spend,
         "wallet_record_count": wallet_record_count,
-        "wallet_sync_last": wallet_sync_last if isinstance(wallet_sync_last, str) else (wallet_sync_last.isoformat() if wallet_sync_last else None),
+        "wallet_sync_last": wallet_sync_last.isoformat() if wallet_sync_last else None,
     }
 
 
@@ -441,31 +432,16 @@ async def parse_emails(
     Default: 1 year back, 50 emails per source.
     """
     try:
-        # Smart since_days: if we already have processed emails, only fetch newer ones
-        # to avoid hammering Composio with already-seen messages
-        effective_since_days = req.since_days
-        last_processed = await db.execute(
-            select(func.max(ProcessedEmail.processed_date))
-        )
-        last_date = last_processed.scalar()
-        if last_date:
-            from datetime import timezone
-            if isinstance(last_date, str):
-                last_date = datetime.fromisoformat(last_date)
-            days_since = (datetime.utcnow() - last_date.replace(tzinfo=None)).days
-            # Add 2-day overlap to catch any emails that arrived during the last sync
-            effective_since_days = min(req.since_days, max(3, days_since + 2))
-
         results = await email_fetcher.process_emails(
             db=db,
             sources=req.sources,
             max_results=req.max_results,
-            since_days=effective_since_days
+            since_days=req.since_days
         )
         return {
             "success": True,
             "message": f"Processed {results['processed']} emails, found {results['new_subscriptions']} new subscriptions",
-            "results": {**results, "since_days_used": effective_since_days}
+            "results": results
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email parsing failed: {str(e)}")
@@ -1162,8 +1138,3 @@ if __name__ == "__main__":
     load_dotenv()
     port = int(os.getenv("API_PORT", "8000"))
     uvicorn.run("api:app", host="0.0.0.0", port=port, reload=True)
-
-
-
-
-

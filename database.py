@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import String, Float, DateTime, Integer, Text, select, delete, update, func
+from sqlalchemy import String, Float, DateTime, Boolean, Integer, JSON, select, delete, update, func, ForeignKey
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,7 +24,7 @@ DATABASE_URL = os.getenv(
     f"sqlite+aiosqlite:///{_DB_PATH}"
 )
 
-# Railway injects postgresql:// but SQLAlchemy async requires postgresql+asyncpg://
+# Fix Railway's auto-generated URL: asyncpg driver required for SQLAlchemy async
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgres://"):
@@ -64,14 +64,16 @@ class Subscription(Base):
     notes: Mapped[str] = mapped_column(String(1000), nullable=True)
     source: Mapped[str] = mapped_column(String(100), default="manual")
     icon_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    # Wallet cross-reference fields
+    confirmed_by_wallet: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_payment_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    actual_cost: Mapped[float] = mapped_column(Float, nullable=True)
+    # Approval workflow: pending (wallet_discovery) → approved | dismissed
+    approval_status: Mapped[str] = mapped_column(String(20), default="approved")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
-    confirmed_by_wallet: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
-    last_payment_date: Mapped[str] = mapped_column(String(10), nullable=True)
-    actual_cost: Mapped[float] = mapped_column(Float, nullable=True)
-    approval_status: Mapped[str] = mapped_column(String(20), nullable=True)
 
     def to_dict(self):
         """Convert model to dictionary for JSON serialization."""
@@ -88,12 +90,48 @@ class Subscription(Base):
             "notes": self.notes,
             "source": self.source,
             "icon_url": self.icon_url,
+            "confirmed_by_wallet": self.confirmed_by_wallet,
+            "last_payment_date": self.last_payment_date.isoformat() if self.last_payment_date else None,
+            "actual_cost": self.actual_cost,
+            "approval_status": self.approval_status or "approved",
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "confirmed_by_wallet": self.confirmed_by_wallet,
-            "last_payment_date": self.last_payment_date,
-            "actual_cost": self.actual_cost,
-            "approval_status": self.approval_status,
+        }
+
+
+class FinancialRecord(Base):
+    """Financial transactions from BudgetBakers Wallet for cross-referencing."""
+    __tablename__ = "financial_records"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)  # Wallet record UUID
+    date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False)
+    payee: Mapped[str] = mapped_column(String(500), nullable=True)
+    category_id: Mapped[str] = mapped_column(String(255), nullable=True)
+    category_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    account_id: Mapped[str] = mapped_column(String(255), nullable=True)
+    account_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    note: Mapped[str] = mapped_column(String(1000), nullable=True)
+    labels: Mapped[list] = mapped_column(JSON, default=list)
+    record_type: Mapped[str] = mapped_column(String(50), nullable=True)  # expense / income
+    matched_subscription_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "date": self.date.isoformat() if self.date else None,
+            "amount": self.amount,
+            "currency": self.currency,
+            "payee": self.payee,
+            "category_name": self.category_name,
+            "account_name": self.account_name,
+            "note": self.note,
+            "labels": self.labels,
+            "record_type": self.record_type,
+            "matched_subscription_id": self.matched_subscription_id,
+            "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }
 
 
@@ -138,62 +176,10 @@ class SubscriptionEvent(Base):
         }
 
 
-class FinancialRecord(Base):
-    """Wallet transaction records from BudgetBakers."""
-    __tablename__ = "financial_records"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=True)
-    currency: Mapped[str] = mapped_column(String(10), nullable=True)
-    payee: Mapped[str] = mapped_column(String(255), nullable=True)
-    category_id: Mapped[str] = mapped_column(String(100), nullable=True)
-    category_name: Mapped[str] = mapped_column(String(100), nullable=True)
-    account_id: Mapped[str] = mapped_column(String(100), nullable=True)
-    account_name: Mapped[str] = mapped_column(String(100), nullable=True)
-    note: Mapped[str] = mapped_column(Text, nullable=True)
-    labels: Mapped[str] = mapped_column(Text, nullable=True)
-    record_type: Mapped[str] = mapped_column(String(50), nullable=True)
-    matched_subscription_id: Mapped[int] = mapped_column(Integer, nullable=True)
-    fetched_at: Mapped[str] = mapped_column(String(30), nullable=True)
-
-
 async def init_db():
-    """Initialize database - create all tables and apply column migrations."""
+    """Initialize database - create all tables."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        from sqlalchemy import text
-        # If financial_records.id is INTEGER (old schema), truncate and recreate the table.
-        # The 56 stale records from old deployments are useless (wrong ID format).
-        try:
-            result = await conn.execute(text(
-                "SELECT data_type FROM information_schema.columns "
-                "WHERE table_name='financial_records' AND column_name='id' AND table_schema='public'"
-            ))
-            row = result.fetchone()
-            if row and row[0] in ('integer', 'bigint'):
-                await conn.execute(text("TRUNCATE TABLE financial_records"))
-                await conn.execute(text(
-                    "ALTER TABLE financial_records "
-                    "ALTER COLUMN id TYPE VARCHAR(64) USING id::VARCHAR(64)"
-                ))
-        except Exception:
-            pass  # SQLite or already correct
-
-        # Add columns that may be missing from older schema deployments
-        migrations = [
-            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS confirmed_by_wallet INTEGER DEFAULT 0",
-            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_payment_date VARCHAR(10)",
-            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS actual_cost FLOAT",
-            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)",
-            "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS matched_subscription_id INTEGER",
-            "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS fetched_at VARCHAR(30)",
-        ]
-        for sql in migrations:
-            try:
-                await conn.execute(text(sql))
-            except Exception:
-                pass  # Column may already exist or table may not exist yet
 
 
 async def get_db():
