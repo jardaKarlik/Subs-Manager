@@ -233,7 +233,18 @@ async def get_subscriptions(
 
     items_out = []
     for item in items:
-        d = item.to_dict()
+        try:
+            d = item.to_dict()
+        except Exception as _row_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "to_dict failed for sub id=%s: %s", getattr(item, "id", "?"), _row_exc
+            )
+            d = {
+                "id": getattr(item, "id", None),
+                "service_name": getattr(item, "service_name", "?"),
+                "error": "serialization_failed",
+            }
         d["total_spent"] = total_spent_map.get(item.id)
         items_out.append(d)
 
