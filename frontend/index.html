@@ -170,9 +170,10 @@ table.reg th.r,table.reg td.c-mo{text-align:right}
       <span>USER:</span><span class="user">JK@LOCAL</span>
     </div>
     <div class="mtd">
-      <span class="lbl">MTD</span>
+      <span class="lbl">BURN</span>
       <span class="num" id="mtd-total">$---.--</span>
       <span class="delta" id="mtd-yearly">▲ $----/YR</span>
+      <span class="lbl" id="snapshot-label" style="margin-left:12px;font-size:9px;color:var(--text-mute);white-space:nowrap">SNAP: --</span>
     </div>
   </header>
   <div class="ticker"><div class="track" id="ticker-track">loading…</div></div>
@@ -222,16 +223,16 @@ table.reg th.r,table.reg td.c-mo{text-align:right}
     </section>
     <aside class="col-right">
       <section class="pane pane--muted pane--burn" aria-label="Burn rate">
-        <div class="pane-rule"><span class="t">▸ BURN RATE · 12M</span><span class="hint">EXPORT [F8]</span></div>
+        <div class="pane-rule"><span class="t">▸ BURN RATE · TOP 10</span><span class="hint" style="font-size:8px" id="burn-hint">ALL CURRENCIES</span></div>
         <div class="burn-head">
           <span class="big" id="burn-total">$---.--</span>
-          <span class="per">/ MO</span>
+          <span class="per">/ MO · USD</span>
           <span class="mom" id="burn-yr">$---- / YR</span>
         </div>
-        <div class="burn-chart">
-          <svg id="burn-svg" viewBox="0 0 460 196" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block">
-            <text x="230" y="100" text-anchor="middle" fill="#56565b" font-size="10" font-family="'JetBrains Mono',monospace">LOADING…</text>
-          </svg>
+        <div class="burn-chart" style="display:block;overflow-y:auto">
+          <div id="burn-top10" style="padding:4px 8px 8px;display:flex;flex-direction:column;gap:6px;font-size:11px">
+            <span style="color:var(--text-mute);padding:12px 4px">LOADING…</span>
+          </div>
         </div>
       </section>
       <section class="pane pane--muted" aria-label="Allocation by category">
@@ -599,38 +600,102 @@ function renderFlagged(subs) {
   document.getElementById('flagged-savings').textContent=`${savings.toFixed(2)}/MO · ${Math.round(savings*12)}/YR`;
 }
 
-function renderBurnChart(events) {
-  const svg=document.getElementById('burn-svg');
-  const buckets={};
-  events.forEach(e=>{if(!e.event_date)return;const k=e.event_date.substring(0,7);buckets[k]=(buckets[k]||0)+(e.amount||0);});
-  const months=[];const now=new Date();
-  for(let i=11;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);}
-  const values=months.map(m=>buckets[m]||0);
-  const fallback=!values.some(v=>v>0);
-  if(fallback){const mo=allSubs.reduce((s,x)=>s+monthly(x),0);values.fill(mo);}
-  const min=Math.min(...values)*0.9,max=Math.max(...values)*1.05||1;
-  const W=460,H=196,PAD_L=42,PAD_B=26,PAD_T=10;
-  const cW=W-PAD_L-10,cH=H-PAD_B-PAD_T;
-  const xS=i=>PAD_L+(i/(months.length-1))*cW;
-  const yS=v=>PAD_T+cH-((v-min)/(max-min+0.001))*cH;
-  let grid='';
-  for(let i=0;i<=4;i++){const v=min+(max-min)*(i/4);const y=yS(v);grid+=`<line x1="${PAD_L}" x2="${W-10}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.06)"/><text x="${PAD_L-4}" y="${(y+3).toFixed(1)}" text-anchor="end" fill="#56565b" font-size="9" font-family="'JetBrains Mono',monospace">${Math.round(v)}</text>`;}
-  const pts=values.map((v,i)=>`${xS(i).toFixed(1)},${yS(v).toFixed(1)}`);
-  const pathD='M'+pts.join(' L');
-  const areaD=pathD+` L ${xS(months.length-1).toFixed(1)},${(PAD_T+cH).toFixed(1)} L ${PAD_L.toFixed(1)},${(PAD_T+cH).toFixed(1)} Z`;
-  const labels=months.map((m,i)=>`<text x="${xS(i).toFixed(1)}" y="${H-4}" text-anchor="middle" fill="#56565b" font-size="9" font-family="'JetBrains Mono',monospace">${new Date(m+'-15').toLocaleString('en',{month:'short'})}</text>`).join('');
-  svg.innerHTML=`<defs><linearGradient id="burn" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffe600" stop-opacity="0.25"/><stop offset="100%" stop-color="#ffe600" stop-opacity="0"/></linearGradient></defs>${grid}<path d="${areaD}" fill="url(#burn)"/><path d="${pathD}" fill="none" stroke="#ffe600" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${labels}${fallback?`<text x="${W/2}" y="20" text-anchor="middle" fill="#56565b" font-size="9" font-family="'JetBrains Mono',monospace">NO EVENTS · SHOWING CURRENT RATE</text>`:''}`;
+// ── Simple FX rates (matching backend, for client-side formatting) ──
+const FX_RATES = {"CZK": 0.043, "EUR": 1.08, "USD": 1.0, "GBP": 1.27,
+  "PLN": 0.25, "CHF": 1.12, "CAD": 0.73, "AUD": 0.66, "JPY": 0.0064};
+function toUsd(val, cur) {
+  const r = FX_RATES[(cur || 'USD').toUpperCase()] || 0;
+  return (val || 0) * r;
+}
+function fmtMoney(val, cur) {
+  const c = (cur || 'USD').toUpperCase();
+  if (c === 'CZK') return `${val.toFixed(0)} Kč`;
+  if (c === 'EUR') return `€${val.toFixed(2)}`;
+  if (c === 'USD') return `$${val.toFixed(2)}`;
+  return `${val.toFixed(2)} ${c}`;
 }
 
-function renderStats() {
-  const total=allSubs.reduce((s,x)=>s+monthly(x),0);
-  const active=allSubs.filter(x=>x.status==='active').length;
-  const flagged=allSubs.filter(x=>x.status==='idle').length;
-  document.getElementById('mtd-total').textContent=total.toFixed(2);
-  document.getElementById('mtd-yearly').textContent='▲ '+Math.round(total*12)+'/YR';
-  document.getElementById('burn-total').textContent=total.toFixed(2);
-  document.getElementById('burn-yr').textContent=Math.round(total*12)+' / YR';
-  document.getElementById('meta-counts').textContent=`${active} ACTIVE / ${flagged} FLAGGED`;
+/** Render a horizontal bar chart of the top 10 services by monthly cost. */
+function renderBurnRate() {
+  const el = document.getElementById('burn-top10');
+  if (!el || !allSubs.length) return;
+
+  // Top 10 by monthly cost (in their own currency, we normalize to USD for sorting)
+  const top10 = [...allSubs]
+    .filter(s => s.billing_cycle !== 'one-time' && s.status !== 'cancelled')
+    .map(s => ({ ...s, _mo: monthly(s), _usd: toUsd(monthly(s), s.currency) }))
+    .sort((a, b) => b._usd - a._usd)
+    .slice(0, 10);
+
+  const maxUsd = top10.length ? top10[0]._usd : 1;
+  const total = top10.reduce((s, x) => s + x._usd, 0);
+
+  const bars = top10.map((s, i) => {
+    const pct = (s._usd / maxUsd) * 100;
+    const share = total > 0 ? (s._usd / total) * 100 : 0;
+    const color = getFallbackColor(s.service_name);
+    const serviceShort = s.service_name.toUpperCase().substring(0, 22);
+
+    return `<div style="display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:center;min-height:22px">
+      <span style="color:var(--text-mute);font-size:10px;text-align:right">${i + 1}</span>
+      <div style="position:relative;height:18px;border-radius:3px;overflow:hidden;
+        background:rgba(255,255,255,0.04)">
+        <div style="position:absolute;top:0;left:0;height:100%;width:${pct.toFixed(1)}%;
+          background:${color};opacity:0.7;border-radius:3px;transition:width .3s"></div>
+        <span style="position:relative;padding:0 6px;line-height:18px;font-size:10px;
+          font-weight:600;letter-spacing:.3px;white-space:nowrap;overflow:hidden;
+          text-overflow:ellipsis;display:block;color:#fff;mix-blend-mode:difference">
+          ${serviceShort}</span>
+      </div>
+      <span style="text-align:right;font-size:11px;font-weight:600;color:var(--yellow);white-space:nowrap">
+        ${fmtMoney(s._mo, s.currency)}
+        <span style="color:var(--text-mute);font-size:9px;font-weight:400;margin-left:4px">(${share.toFixed(0)}%)</span>
+      </span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = bars;
+}
+
+async function renderStats() {
+  // Fetch the summary endpoint which returns USD-normalized totals
+  // and per-currency breakdown from the backend
+  let usdTotal = 0, yrTotal = 0, currencies = {};
+  try {
+    const r = await fetch(`${API}/api/summary`);
+    if (r.ok) {
+      const d = await r.json();
+      usdTotal = d.estimated_monthly_usd || 0;
+      yrTotal = d.estimated_yearly_cost || 0;
+      currencies = d.by_currency || {};
+      // Show snapshot timestamp
+      const snap = document.getElementById('snapshot-label');
+      if (snap && d.data_as_of) {
+        const t = d.data_as_of.replace('T', ' ').substring(0, 19);
+        snap.textContent = t + 'Z';
+      }
+      // Show per-currency breakdown in burn hint
+      const hint = document.getElementById('burn-hint');
+      if (hint && currencies) {
+        const parts = Object.entries(currencies).map(([k, v]) => fmtMoney(v, k));
+        hint.textContent = parts.join(' + ');
+      }
+    }
+  } catch(e) { /* fallback — compute client-side */ }
+
+  // Client-side fallback (also used for per-sub cost display)
+  const total = allSubs.reduce((s,x) => s + monthly(x), 0);
+  const active = allSubs.filter(x => x.status === 'active').length;
+  const flagged = allSubs.filter(x => x.status === 'idle').length;
+
+  const displayTotal = usdTotal || total;
+  document.getElementById('mtd-total').textContent = '$' + displayTotal.toFixed(2);
+  document.getElementById('mtd-yearly').textContent = '▲ $' + Math.round(displayTotal * 12) + '/YR';
+  document.getElementById('burn-total').textContent = '$' + displayTotal.toFixed(2);
+  document.getElementById('burn-yr').textContent = '$' + Math.round(displayTotal * 12) + ' / YR';
+  document.getElementById('meta-counts').textContent = `${active} ACTIVE / ${flagged} FLAGGED`;
+
+  renderBurnRate();
 }
 
 function sortBy(key){sortDir=sortKey===key?(sortDir==='desc'?'asc':'desc'):'desc';sortKey=key;renderTable();}
@@ -676,7 +741,7 @@ async function loadAll() {
     allSubs=subsData.items||[];
     let events=[];
     try{const ev=await fetch(`${API}/api/events?months=12`);if(ev.ok)events=(await ev.json()).events||[];}catch(e){}
-    renderTable();renderTicker(allSubs);renderAllocation(allSubs);renderFlagged(allSubs);renderStats();renderBurnChart(events);
+    renderTable();renderTicker(allSubs);renderAllocation(allSubs);renderFlagged(allSubs);renderBurnRate();renderStats();
     lastSync=Date.now();updateSyncAgo();
     document.getElementById('status-dot').textContent='● LIVE';
     document.getElementById('status-dot').style.color='var(--green)';
