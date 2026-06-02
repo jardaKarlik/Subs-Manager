@@ -274,28 +274,67 @@ const CAT_COLOR = {
   music:'#5fe39a', design:'#f472b6', productivity:'#67e8f9', security:'#fbbf24', other:'#8a8a8e',
 };
 
-// ── Service name → Clearbit domain mapping ──────────────────
+// ── Service name → domain mapping (for favicon lookup) ─────
+// The order matters: first match wins. Add more entries to cover
+// more services. Keys are matched as substrings (case-insensitive).
 const SVC_DOMAIN = {
+  // Big tech
   'amazon web services':'amazon.com', 'aws':'amazon.com',
-  'netflix':'netflix.com', 'spotify':'spotify.com', 'github':'github.com',
-  'google':'google.com', 'google cloud':'cloud.google.com',
-  'microsoft':'microsoft.com', 'azure':'microsoft.com',
-  'openai':'openai.com', 'chatgpt':'openai.com',
+  'google':'google.com', 'google cloud':'cloud.google.com', 'gcp':'cloud.google.com',
+  'microsoft':'microsoft.com', 'azure':'microsoft.com', 'office 365':'microsoft.com', 'xbox':'xbox.com',
+  'apple':'apple.com', 'itunes':'apple.com', 'icloud':'apple.com', 'apple tv':'apple.com',
+  'meta':'meta.com', 'meta platforms':'meta.com', 'facebook':'facebook.com', 'instagram':'instagram.com', 'whatsapp':'whatsapp.com', 'oculus':'meta.com',
+  'twitter':'x.com', 'x.com':'x.com', 'linkedin':'linkedin.com',
+  'nvidia':'nvidia.com', 'amd':'amd.com', 'intel':'intel.com',
+  'samsung':'samsung.com', 'sony':'sony.com', 'sony interactive':'playstation.com',
+  'playstation':'playstation.com', 'playstation plus':'playstation.com', 'psn':'playstation.com',
+  'nintendo':'nintendo.com',
+  // AI
+  'openai':'openai.com', 'chatgpt':'openai.com', 'gpt':'openai.com',
   'anthropic':'anthropic.com', 'claude':'anthropic.com',
-  'midjourney':'midjourney.com', 'vercel':'vercel.com',
-  'figma':'figma.com', 'notion':'notion.so', 'slack':'slack.com',
-  'discord':'discord.com', 'digitalocean':'digitalocean.com',
-  'supabase':'supabase.com', 'sentry':'sentry.io',
-  'cursor':'cursor.sh', 'elevenlabs':'elevenlabs.io',
-  'linear':'linear.app', 'cloudflare':'cloudflare.com',
-  'replicate':'replicate.com', 'tidal':'tidal.com',
-  'soundcloud':'soundcloud.com', '1password':'1password.com',
-  'apple tv+':'apple.com', 'apple tv':'apple.com',
-  'disney+':'disneyplus.com', 'max':'max.com', 'hbo':'max.com',
-  'beatport':'beatport.com', 'bandcamp':'bandcamp.com',
-  'native instruments':'native-instruments.com',
-  'patreon':'patreon.com', 'railway':'railway.app',
-  'cline':'cline.bot', 'openrouter':'openrouter.ai',
+  'midjourney':'midjourney.com', 'cursor':'cursor.sh', 'cline':'cline.bot',
+  'perplexity':'perplexity.ai', 'huggingface':'huggingface.co', 'hugging face':'huggingface.co',
+  'replicate':'replicate.com', 'elevenlabs':'elevenlabs.io', 'eleven labs':'elevenlabs.io',
+  'openrouter':'openrouter.ai', 'runway':'runwayml.com', 'stability':'stability.ai',
+  // Dev tools
+  'github':'github.com', 'gitlab':'gitlab.com', 'bitbucket':'bitbucket.org',
+  'vercel':'vercel.com', 'netlify':'netlify.com', 'render':'render.com',
+  'figma':'figma.com', 'notion':'notion.so', 'linear':'linear.app',
+  'slack':'slack.com', 'discord':'discord.com', 'zoom':'zoom.us',
+  'jetbrains':'jetbrains.com', 'pycharm':'jetbrains.com', 'intellij':'jetbrains.com',
+  'docker':'docker.com', 'kubernetes':'kubernetes.io',
+  // Cloud
+  'digitalocean':'digitalocean.com', 'linode':'linode.com', 'vultr':'vultr.com',
+  'cloudflare':'cloudflare.com', 'supabase':'supabase.com',
+  'firebase':'firebase.google.com', 'heroku':'heroku.com',
+  'aws':'amazon.com', 'amazon':'amazon.com',
+  'sentry':'sentry.io', 'datadog':'datadoghq.com', 'new relic':'newrelic.com',
+  // Streaming
+  'netflix':'netflix.com', 'disney':'disneyplus.com', 'disney+':'disneyplus.com',
+  'hbo':'max.com', 'max':'max.com', 'paramount':'paramountplus.com',
+  'hulu':'hulu.com', 'peacock':'peacocktv.com', 'prime video':'primevideo.com',
+  'youtube':'youtube.com', 'twitch':'twitch.tv',
+  // Music
+  'spotify':'spotify.com', 'apple music':'music.apple.com',
+  'tidal':'tidal.com', 'soundcloud':'soundcloud.com', 'beatport':'beatport.com',
+  'bandcamp':'bandcamp.com', 'native instruments':'native-instruments.com',
+  'native-instruments':'native-instruments.com',
+  'ableton':'ableton.com', 'fl studio':'image-line.com', 'logic':'apple.com',
+  // Productivity
+  '1password':'1password.com', 'lastpass':'lastpass.com', 'bitwarden':'bitwarden.com',
+  'dropbox':'dropbox.com', 'google drive':'drive.google.com',
+  'adobe':'adobe.com', 'canva':'canva.com',
+  // Payments / Shopping
+  'paypal':'paypal.com', 'stripe':'stripe.com', 'wise':'wise.com',
+  'vinted':'vinted.com', 'ebay':'ebay.com', 'aliexpress':'aliexpress.com',
+  'amazon prime':'amazon.com', 'patreon':'patreon.com',
+  'kofi':'ko-fi.com', 'buymeacoffee':'buymeacoffee.com',
+  // Travel
+  'airbnb':'airbnb.com', 'booking':'booking.com', 'expedia':'expedia.com',
+  // Other
+  'railway':'railway.app', 'fly':'fly.io', 'render':'render.com',
+  'mongodb':'mongodb.com', 'redis':'redis.io', 'postgres':'postgresql.org',
+  'planeto':'planeto.com',
 };
 
 // Fallback colors for monogram when no logo available
@@ -349,8 +388,16 @@ function isDark(hex) {
 function mono(name) { return name.trim().substring(0,2).toUpperCase(); }
 
 /**
- * Render a logo icon: tries Clearbit first, falls back to colored monogram.
- * size: 'md' (20px) or 'sm' (16px)
+ * Render a logo icon. Tries (in order):
+ *   1) Google Favicon V2 — works for ~every active site, returns the
+ *      actual favicon/brand mark for the domain (PlayStation, Meta,
+ *      Vinted, obscure SaaS — all have one).
+ *   2) sub.icon_url from API (often a Clearbit URL we already tried)
+ *   3) logo.clearbit.com/<mapped-domain>
+ *   4) logo.clearbit.com/<derived-domain>
+ *   5) Colored monogram with the first letter of the name.
+ *
+ * size: 'md' (28px) or 'sm' (20px)
  */
 function logoHtml(sub, size) {
   const isSmall  = size === 'sm';
@@ -358,19 +405,33 @@ function logoHtml(sub, size) {
   const sizeClass= isSmall ? 'logo-wrap logo-wrap-sm' : 'logo-wrap';
   const fallbackBg = getFallbackColor(sub.service_name);
   const fallbackFg = isDark(fallbackBg) ? '#fff' : '#0a0a0b';
-  const m = mono(sub.service_name);
-  const monoFs = isSmall ? 9 : 11;
+  // Use first letter only (clearer at small sizes than 2 letters)
+  const m = (sub.service_name || '?').trim().charAt(0).toUpperCase();
+  const monoFs = isSmall ? 12 : 16;
 
-  // Build candidate URLs in priority order:
-  //   1) sub.icon_url from API (often a Clearbit URL or sometimes a bad one)
-  //   2) constructed Clearbit URL from our domain map
-  //   3) constructed Clearbit URL from a name-derived domain (best effort)
+  // Build the candidate URL list, in priority order.
   const cands = [];
-  if (sub.icon_url) cands.push(sub.icon_url);
   const mapped = getBrandDomain(sub.service_name);
-  if (mapped) cands.push(`https://logo.clearbit.com/${mapped}`);
-  const derived = getDerivedDomain(sub.service_name);
-  if (derived && derived !== mapped) cands.push(`https://logo.clearbit.com/${derived}`);
+  const domain = mapped || getDerivedDomain(sub.service_name);
+
+  if (domain) {
+    // PRIMARY: Google Favicon V2 — high hit rate, official favicon.
+    // sz=128 gives a crisp 128px image that downsamples cleanly to 28px.
+    cands.push(`https://www.google.com/s2/favicons?domain=${domain}&sz=128`);
+  }
+  if (sub.icon_url && !cands.includes(sub.icon_url)) cands.push(sub.icon_url);
+  if (mapped) {
+    const cb = `https://logo.clearbit.com/${mapped}`;
+    if (!cands.includes(cb)) cands.push(cb);
+  }
+  // Try www.<derived> for one more shot if mapped lookup failed
+  if (!mapped) {
+    const derived = getDerivedDomain(sub.service_name);
+    if (derived) {
+      const cb2 = `https://logo.clearbit.com/${derived}`;
+      if (!cands.includes(cb2)) cands.push(cb2);
+    }
+  }
 
   if (cands.length === 0) {
     return `<span class="${sizeClass}" style="background:${fallbackBg}">
@@ -378,20 +439,17 @@ function logoHtml(sub, size) {
     </span>`;
   }
 
-  // First candidate as <img>. We track the candidate index in a closure
-  // variable on the <img> itself (img._candIdx) so the onerror chain
-  // works even when Clearbit 302-redirects to a different final URL.
   const id = 'logo_' + sub.id;
   const candsJson = JSON.stringify(cands);
   return `<span class="${sizeClass}" style="background:#fff"
     id="${id}"
-    data-fb-bg="${fallbackBg}" data-fb-fg="${fallbackFg}" data-mono="${m}" data-sm="${isSmall?1:0}" data-fs="${monoFs}">
+    data-fb-bg="${fallbackBg}" data-fb-fg="${fallbackFg}" data-mono="${m}" data-fs="${monoFs}">
     <img width="${px}" height="${px}"
       data-cands="${candsJson.replace(/"/g, '&quot;')}" data-idx="0"
       src="${cands[0]}"
       onload="this.parentElement.style.background='#fff'"
       onerror="logoChain(this)"
-      style="display:block;object-fit:contain">
+      style="display:block;object-fit:contain;border-radius:3px">
   </span>`;
 }
 
@@ -408,8 +466,8 @@ function logoChain(img) {
   const el = img.parentElement;
   if (!el) return;
   el.style.background = el.dataset.fbBg;
-  const fs = el.dataset.fs || 11;
-  el.innerHTML = `<span class="logo-fallback" style="color:${el.dataset.fbFg};font-size:${fs}px">${el.dataset.mono}</span>`;
+  const fs = el.dataset.fs || 16;
+  el.innerHTML = `<span class="logo-fallback" style="color:${el.dataset.fbFg};font-size:${fs}px;font-weight:800">${el.dataset.mono}</span>`;
 }
 
 function logoFallback(id) {
