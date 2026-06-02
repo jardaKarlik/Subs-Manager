@@ -47,34 +47,62 @@ STRIP_WORDS = {
 
 # Extra aliases: if payee contains key → match to subscription service name
 PAYEE_ALIASES = {
-    'spotify':       'Spotify',
-    'netflix':       'Netflix',
-    'anthropic':     'Anthropic',
-    'openai':        'OpenAI',
-    'github':        'GitHub',
-    'microsoft':     'Microsoft',
-    'google':        'Google',
-    'apple':         'Apple',
-    'adobe':         'Adobe',
-    'figma':         'Figma',
-    'notion':        'Notion',
-    'vercel':        'Vercel',
-    'digitalocean':  'DigitalOcean',
-    'cloudflare':    'Cloudflare',
-    'railway':       'Railway',
-    'beatport':      'Beatport',
-    'bandcamp':      'Bandcamp',
-    'native instruments': 'Native Instruments',
-    'patreon':       'Patreon',
-    'cline':         'Cline',
-    'openrouter':    'OpenRouter',
+    'spotify':                 'Spotify',
+    'netflix':                 'Netflix',
+    'anthropic':               'Anthropic',
+    'openai':                  'OpenAI',
+    'github':                  'GitHub',
+    'microsoft':               'Microsoft',
+    'google':                  'Google',
+    'apple':                   'Apple',
+    'adobe':                   'Adobe',
+    'figma':                   'Figma',
+    'notion':                  'Notion',
+    'vercel':                  'Vercel',
+    'digitalocean':            'DigitalOcean',
+    'cloudflare':              'Cloudflare',
+    'railway':                 'Railway',
+    'beatport':                'Beatport',
+    'bandcamp':                'Bandcamp',
+    'native':            'Native Instruments',
+    'native instruments':      'Native Instruments',
+    'patreon':                 'Patreon',
+    'cline':                   'Cline',
+    'openrouter':              'OpenRouter',
+    'wix':                     'Wix',
+    'mixcloud':                'Mixcloud',
+    'soundcloud':              'SoundCloud',
+    'discogs':                 'Discogs',
+    'patreon':                 'Patreon',
+    'vinted':                  'Vinted',
+    'saily':                   'Saily',
+    'pixiv':                   'Pixiv',
 }
 
 
 def _is_paypal_record(record: FinancialRecord) -> bool:
-    """Return True if this record is a PayPal intermediary (should be deduplicated)."""
+    """Return True if this record is a PayPal intermediary (should be deduplicated).
+
+    IMPORTANT: PayPal payments for KNOWN subscription services are KEPT.
+    Only skip raw PayPal intermediary records (amount ~ amount in another
+    record, no subscription service name in payee).
+    """
     payee = (record.payee or '').lower()
     account = (record.account_name or '').lower()
+
+    # If the payee mentions a known subscription service, KEEP it.
+    # These are legitimate subscription payments routed through PayPal.
+    for alias in PAYEE_ALIASES:
+        if alias in payee:
+            return False
+
+    # Additional common subscription payee patterns that should NOT be skipped
+    subscription_payees = ['wix', 'squarespace', 'shopify', 'namecheap',
+                           'godaddy', 'bluehost', 'siteground', 'dreamhost']
+    for sp in subscription_payees:
+        if sp in payee:
+            return False
+
     for pat in PAYPAL_PAYEE_PATTERNS:
         if re.search(pat, payee, re.I):
             return True
