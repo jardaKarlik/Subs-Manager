@@ -247,7 +247,7 @@ class SubscriptionMatcher:
 
         async with AsyncSessionLocal() as db:
             sub_result = await db.execute(select(Subscription).where(
-                Subscription.confirmed_by_wallet == True  # noqa
+                Subscription.confirmed_by_wallet == 1  # noqa
             ))
             subs = sub_result.scalars().all()
 

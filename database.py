@@ -65,7 +65,7 @@ class Subscription(Base):
     source: Mapped[str] = mapped_column(String(100), default="manual")
     icon_url: Mapped[str] = mapped_column(String(500), nullable=True)
     # Wallet cross-reference fields
-    confirmed_by_wallet: Mapped[bool] = mapped_column(Boolean, default=False)
+    confirmed_by_wallet: Mapped[int] = mapped_column(Integer, default=0)
     last_payment_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     actual_cost: Mapped[float] = mapped_column(Float, nullable=True)
     # Approval workflow: pending (wallet_discovery) → approved | dismissed
