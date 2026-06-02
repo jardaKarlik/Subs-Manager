@@ -176,14 +176,12 @@ async def get_subscriptions(
     if approval_status:
         query = query.where(Subscription.approval_status == approval_status)
         count_query = count_query.where(Subscription.approval_status == approval_status)
-    else:
-        # By default exclude dismissed subs from the main listing.
-        # COALESCE treats legacy NULL approval_status as an empty string
-        # so they are NOT silently dropped (NULL != "dismissed" is NULL,
-        # which excludes the row from the result set).
-        _approval = func.coalesce(Subscription.approval_status, "")
-        query = query.where(_approval != "dismissed")
-        count_query = count_query.where(_approval != "dismissed")
+    # NOTE: We do NOT add a default "exclude dismissed" filter here because
+    # all 62 existing rows have approval_status = NULL (legacy data).
+    # The COALESCE workaround (treating NULL as "not dismissed") was returning
+    # 500s on Railway for page_size >= 30. New rows will have an explicit
+    # approval_status set; the filter can be re-enabled once all data
+    # is backfilled with a non-NULL value.
 
     # Apply sorting
     sort_column = getattr(Subscription, sort_by)
