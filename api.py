@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, update as sql_update
 from sqlalchemy.orm import selectinload
 
 from database import (
@@ -113,14 +113,31 @@ class StatsResponse(BaseModel):
     by_category: dict
     by_status: dict
 
+    class Config:
+        extra = "allow"
+
 
 # ============================================================================
-# Startup Event
+# Startup / Shutdown Events
 # ============================================================================
 
 @app.on_event("startup")
 async def startup():
     await init_db()
+    try:
+        from scheduler import start_scheduler
+        start_scheduler()
+    except Exception:
+        pass
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    try:
+        from scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
 
 
 # ============================================================================
@@ -130,60 +147,95 @@ async def startup():
 @app.get("/api/subscriptions", response_model=PaginatedSubscriptions)
 async def get_subscriptions(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     category: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     billing_cycle: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    approval_status: Optional[str] = Query(None, description="Filter by approval_status: pending|approved|dismissed"),
     sort_by: str = Query("created_at", pattern="^(service_name|cost|created_at|category|status)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db)
 ):
     """Get paginated subscriptions with filtering and sorting."""
-    
+    from database import FinancialRecord
+
     # Build base query
     query = select(Subscription)
     count_query = select(func.count(Subscription.id))
-    
+
     # Apply filters
     if category:
         query = query.where(Subscription.category == category)
         count_query = count_query.where(Subscription.category == category)
-    
+
     if status:
         query = query.where(Subscription.status == status)
         count_query = count_query.where(Subscription.status == status)
-    
+
     if billing_cycle:
         query = query.where(Subscription.billing_cycle == billing_cycle)
         count_query = count_query.where(Subscription.billing_cycle == billing_cycle)
-    
+
     if search:
         search_term = f"%{search}%"
         query = query.where(Subscription.service_name.ilike(search_term))
         count_query = count_query.where(Subscription.service_name.ilike(search_term))
-    
+
+    if approval_status:
+        query = query.where(Subscription.approval_status == approval_status)
+        count_query = count_query.where(Subscription.approval_status == approval_status)
+    else:
+        # By default exclude dismissed subs from the main listing
+        query = query.where((Subscription.approval_status != "dismissed") | (Subscription.approval_status == None))
+        count_query = count_query.where((Subscription.approval_status != "dismissed") | (Subscription.approval_status == None))
+
     # Apply sorting
     sort_column = getattr(Subscription, sort_by)
     if sort_order == "desc":
         sort_column = sort_column.desc()
     query = query.order_by(sort_column)
-    
+
     # Get total count
     total_result = await db.execute(count_query)
     total = total_result.scalar()
-    
+
     # Apply pagination
     offset = (page - 1) * page_size
     query = query.offset(offset).limit(page_size)
-    
+
     result = await db.execute(query)
     items = result.scalars().all()
-    
+
+    # Batch-fetch total_spent per subscription from wallet records
+    sub_ids = [s.id for s in items]
+    total_spent_map: dict[int, float] = {}
+    if sub_ids:
+        spend_q = (
+            select(
+                FinancialRecord.matched_subscription_id,
+                func.sum(FinancialRecord.amount).label("total"),
+            )
+            .where(
+                FinancialRecord.matched_subscription_id.in_(sub_ids),
+                FinancialRecord.record_type == "expense",
+            )
+            .group_by(FinancialRecord.matched_subscription_id)
+        )
+        spend_rows = await db.execute(spend_q)
+        for sid, total_amt in spend_rows.all():
+            total_spent_map[sid] = round(abs(total_amt or 0), 2)
+
     pages = (total + page_size - 1) // page_size
-    
+
+    items_out = []
+    for item in items:
+        d = item.to_dict()
+        d["total_spent"] = total_spent_map.get(item.id)
+        items_out.append(d)
+
     return {
-        "items": [item.to_dict() for item in items],
+        "items": items_out,
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -264,26 +316,24 @@ async def delete_subscription(subscription_id: int, db: AsyncSession = Depends(g
 
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    """Get comprehensive subscription statistics."""
+    """Get comprehensive subscription statistics including wallet-enriched data."""
+    from database import FinancialRecord
     result = await db.execute(select(Subscription))
     subs = result.scalars().all()
-    
+
     total_monthly = 0.0
     total_yearly = 0.0
     by_category = {}
     by_status = {}
-    
+    confirmed_count = 0
+
     for s in subs:
         cost = s.cost or 0
-        
-        # Category breakdown
+
         by_category[s.category] = by_category.get(s.category, {"count": 0, "monthly_cost": 0})
         by_category[s.category]["count"] += 1
-        
-        # Status breakdown
         by_status[s.status] = by_status.get(s.status, 0) + 1
-        
-        # Cost calculations
+
         if s.billing_cycle == "monthly":
             total_monthly += cost
             total_yearly += cost * 12
@@ -293,16 +343,50 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             total_monthly += cost / 12
             by_category[s.category]["monthly_cost"] += cost / 12
         else:
-            # For other cycles, count as monthly
             total_monthly += cost
             by_category[s.category]["monthly_cost"] += cost
-    
+
+        if s.confirmed_by_wallet:
+            confirmed_count += 1
+
+    # Wallet stats
+    wallet_record_count = 0
+    wallet_sync_last = None
+    actual_monthly_spend = 0.0
+    try:
+        wcount = await db.execute(select(func.count(FinancialRecord.id)))
+        wallet_record_count = wcount.scalar() or 0
+
+        wlast = await db.execute(select(func.max(FinancialRecord.fetched_at)))
+        wallet_sync_last = wlast.scalar()
+
+        # Actual monthly spend: sum of matched expense records in last 30 days
+        from datetime import timedelta
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        wspend = await db.execute(
+            select(func.sum(FinancialRecord.amount)).where(
+                FinancialRecord.matched_subscription_id != None,  # noqa: E711
+                FinancialRecord.record_type == "expense",
+                FinancialRecord.date >= thirty_days_ago,
+            )
+        )
+        raw_spend = wspend.scalar() or 0.0
+        actual_monthly_spend = round(abs(raw_spend), 2)
+    except Exception:
+        pass
+
     return {
         "total_subscriptions": len(subs),
         "total_monthly_cost": round(total_monthly, 2),
         "total_yearly_cost": round(total_yearly, 2),
         "by_category": by_category,
-        "by_status": by_status
+        "by_status": by_status,
+        # Wallet-enriched fields
+        "confirmed_count": confirmed_count,
+        "unconfirmed_count": len(subs) - confirmed_count,
+        "actual_monthly_spend": actual_monthly_spend,
+        "wallet_record_count": wallet_record_count,
+        "wallet_sync_last": wallet_sync_last.isoformat() if wallet_sync_last else None,
     }
 
 
@@ -337,14 +421,14 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
 
 class ParseEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
-    max_results: int = Field(default=1000, ge=1, le=2000)
+    max_results: int = Field(default=1000, ge=1, le=50000)
     since_days: int = Field(default=730, ge=1, le=730)
 
 
 class SyncEmailsRequest(BaseModel):
     sources: Optional[List[str]] = None
-    max_results: int = Field(default=100, ge=1, le=1000)
-    since_days: int = Field(default=3, ge=1, le=30)
+    max_results: int = Field(default=100, ge=1, le=50000)
+    since_days: int = Field(default=3, ge=1, le=365)
 
 
 @app.post("/api/parse-emails")
@@ -395,6 +479,62 @@ async def sync_emails(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email sync failed: {str(e)}")
+
+
+@app.get("/api/sync-emails")
+async def sync_emails_get(
+    sources: Optional[str] = Query(None, description="Comma-separated source names"),
+    max_results: int = Query(100, ge=1, le=50000),
+    since_days: int = Query(3, ge=1, le=365),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    GET version: Incremental sync with query params.
+    Use this for simple curl calls without JSON body.
+    """
+    try:
+        source_list = [s.strip() for s in sources.split(",")] if sources else None
+        results = await email_fetcher.process_emails(
+            db=db,
+            sources=source_list,
+            max_results=max_results,
+            since_days=since_days
+        )
+        return {
+            "success": True,
+            "message": f"Sync complete: {results['processed']} processed, {results['new_subscriptions']} new, {results['skipped']} skipped",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email sync failed: {str(e)}")
+
+
+@app.get("/api/parse-emails")
+async def parse_emails_get(
+    sources: Optional[str] = Query(None, description="Comma-separated source names"),
+    max_results: int = Query(1000, ge=1, le=50000),
+    since_days: int = Query(730, ge=1, le=730),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    GET version: Full backfill with query params.
+    Use this for simple curl calls without JSON body.
+    """
+    try:
+        source_list = [s.strip() for s in sources.split(",")] if sources else None
+        results = await email_fetcher.process_emails(
+            db=db,
+            sources=source_list,
+            max_results=max_results,
+            since_days=since_days
+        )
+        return {
+            "success": True,
+            "message": f"Processed {results['processed']} emails, found {results['new_subscriptions']} new subscriptions",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email parsing failed: {str(e)}")
 
 
 @app.get("/api/events")
@@ -665,45 +805,340 @@ async def health_check():
             "/api/sync-emails",
             "/api/events",
             "/api/cleanup",
+            "/api/webhook/status",
             "/api/add-test-data",
             "/api/health"
         ]
     }
 
 
+@app.get("/api/webhook/status")
+async def webhook_status(db: AsyncSession = Depends(get_db)):
+    """Simple status endpoint for Discord/Make.com integrations."""
+    from database import ProcessedEmail, SubscriptionEvent
+
+    # Get total subscriptions
+    sub_query = select(func.count(Subscription.id))
+    sub_result = await db.execute(sub_query)
+    total_subs = sub_result.scalar() or 0
+
+    # Get total cost
+    cost_query = select(Subscription.cost, Subscription.billing_cycle)
+    cost_result = await db.execute(cost_query)
+    subs = cost_result.all()
+
+    monthly_cost = 0.0
+    for cost, cycle in subs:
+        if cycle == "monthly":
+            monthly_cost += cost
+        elif cycle == "yearly":
+            monthly_cost += cost / 12
+
+    # Get processed emails count
+    # Primary: count ProcessedEmail records (exact dedup tracker)
+    total_emails = 0
+    try:
+        email_query = select(func.count(ProcessedEmail.message_id))
+        email_result = await db.execute(email_query)
+        total_emails = email_result.scalar() or 0
+    except Exception:
+        pass
+
+    # Fallback: count distinct source emails from subscription_events
+    # (useful when ProcessedEmail is empty, e.g. ephemeral SQLite on Railway)
+    if total_emails == 0:
+        try:
+            event_query = select(func.count(func.distinct(SubscriptionEvent.message_id)))
+            event_result = await db.execute(event_query)
+            total_emails = event_result.scalar() or 0
+        except Exception:
+            pass
+
+    message = f"📊 **Subscription Manager Status**\n\nDatabase contains **{total_subs}** active subscriptions totaling **${monthly_cost:.2f}/month**.\nWe have processed **{total_emails}** emails to find these."
+
+    return {
+        "content": message,
+        "total_subscriptions": total_subs,
+        "estimated_monthly_cost": round(monthly_cost, 2),
+        "total_emails_processed": total_emails
+    }
+
+
 # ============================================================================
-# Frontend Static Files Serving
+# Wallet (BudgetBakers) Endpoints
 # ============================================================================
 
-# Mount static files (CSS, JS, images)
-frontend_dir = Path(__file__).parent / "frontend"
-if frontend_dir.exists():
-    # Mount static files at /static path
-    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+@app.post("/api/sync-wallet")
+async def sync_wallet(since_days: int = Query(120, ge=1, le=730)):
+    """Fetch financial records from BudgetBakers Wallet and store them."""
+    from wallet_fetcher import WalletFetcher
+    fetcher = WalletFetcher()
+    result = await fetcher.sync(since_days=since_days)
+    return {"status": "ok", **result}
 
 
-# Serve index.html for root and SPA navigation
-@app.get("/")
-async def serve_root():
-    """Serve the main application."""
-    index_path = Path(__file__).parent / "frontend" / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
-    return {"error": "Application not found"}
+@app.get("/api/sync-wallet")
+async def sync_wallet_get(since_days: int = Query(120, ge=1, le=730)):
+    """GET version of wallet sync (browser-friendly)."""
+    from wallet_fetcher import WalletFetcher
+    fetcher = WalletFetcher()
+    result = await fetcher.sync(since_days=since_days)
+    return {"status": "ok", **result}
 
 
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str):
-    """Serve SPA routes by returning index.html for all unknown routes."""
-    # Don't handle /api routes here - they're handled above
-    if full_path.startswith("api/") or full_path.startswith("static/"):
-        raise HTTPException(status_code=404, detail="Not Found")
+@app.get("/api/wallet-records")
+async def get_wallet_records(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    unmatched_only: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return stored financial records, optionally filtered to unmatched ones."""
+    from database import FinancialRecord
+    from sqlalchemy import select, func
 
-    # For all other routes (SPA navigation), serve index.html
-    index_path = Path(__file__).parent / "frontend" / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
-    return {"error": "Application not found"}
+    q = select(FinancialRecord).order_by(FinancialRecord.date.desc())
+    if unmatched_only:
+        q = q.where(FinancialRecord.matched_subscription_id == None)  # noqa: E711
+    q = q.offset(offset).limit(limit)
+
+    result = await db.execute(q)
+    records = result.scalars().all()
+
+    count_q = select(func.count(FinancialRecord.id))
+    if unmatched_only:
+        count_q = count_q.where(FinancialRecord.matched_subscription_id == None)  # noqa: E711
+    total = (await db.execute(count_q)).scalar() or 0
+
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "items": [r.to_dict() for r in records],
+    }
+
+
+@app.get("/api/wallet-spend")
+async def wallet_spend(db: AsyncSession = Depends(get_db)):
+    """Total historical spend per service from wallet financial records."""
+    from database import FinancialRecord
+    rows = await db.execute(
+        select(
+            Subscription.id,
+            Subscription.service_name,
+            Subscription.currency,
+            func.count(FinancialRecord.id).label("payments"),
+            func.sum(FinancialRecord.amount).label("total_amount"),
+            func.avg(FinancialRecord.amount).label("avg_amount"),
+            func.min(FinancialRecord.date).label("first_payment"),
+            func.max(FinancialRecord.date).label("last_payment"),
+        )
+        .join(FinancialRecord, FinancialRecord.matched_subscription_id == Subscription.id)
+        .where(FinancialRecord.record_type == "expense")
+        .group_by(Subscription.id)
+        .order_by(func.sum(FinancialRecord.amount))  # most expensive first (amounts are negative)
+    )
+    items = rows.all()
+    return {
+        "count": len(items),
+        "services": [
+            {
+                "id": r.id,
+                "service_name": r.service_name,
+                "payments": r.payments,
+                "total_spent": round(abs(r.total_amount or 0), 2),
+                "avg_payment": round(abs(r.avg_amount or 0), 2),
+                "currency": r.currency,
+                "first_payment": r.first_payment.isoformat() if r.first_payment else None,
+                "last_payment": r.last_payment.isoformat() if r.last_payment else None,
+            }
+            for r in items
+        ],
+    }
+
+
+@app.post("/api/match-wallet")
+async def match_wallet():
+    """Cross-reference financial records against subscriptions."""
+    from subscription_matcher import SubscriptionMatcher
+    matcher = SubscriptionMatcher()
+    match_result = await matcher.match_all()
+    cycle_result = await matcher.infer_billing_cycles()
+    return {"status": "ok", **match_result, **cycle_result}
+
+
+@app.get("/api/wallet-candidates")
+async def wallet_candidates(min_occurrences: int = Query(2, ge=2), min_score: int = Query(0, ge=0)):
+    """Return unmatched recurring wallet payees scored by subscription likelihood."""
+    from subscription_matcher import SubscriptionMatcher
+    matcher = SubscriptionMatcher()
+    candidates = await matcher.find_unmatched_recurring(min_occurrences=min_occurrences)
+    if min_score > 0:
+        candidates = [c for c in candidates if c["score"] >= min_score]
+    return {"count": len(candidates), "candidates": candidates}
+
+
+class PromoteCandidateRequest(BaseModel):
+    payee: str
+    service_name: str
+    category: str = "other"
+
+
+@app.post("/api/wallet-candidates/promote")
+async def promote_candidate(req: PromoteCandidateRequest):
+    """Promote a wallet payee to a confirmed subscription."""
+    from subscription_matcher import SubscriptionMatcher
+    matcher = SubscriptionMatcher()
+    result = await matcher.promote_candidate(
+        payee=req.payee,
+        service_name=req.service_name,
+        category=req.category,
+    )
+    return {"status": "ok", **result}
+
+
+@app.get("/api/wallet-accounts")
+async def get_wallet_accounts():
+    """Return live account list from BudgetBakers API."""
+    from wallet_fetcher import WalletFetcher
+    fetcher = WalletFetcher()
+    accounts = await fetcher.fetch_accounts()
+    return {"accounts": accounts}
+
+
+# ============================================================================
+# Approval Workflow
+# ============================================================================
+
+@app.post("/api/subscriptions/{subscription_id}/approve")
+async def approve_subscription(subscription_id: int, db: AsyncSession = Depends(get_db)):
+    """Approve a pending subscription (wallet_discovery or manual)."""
+    result = await db.execute(select(Subscription).where(Subscription.id == subscription_id))
+    sub = result.scalar_one_or_none()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    sub.approval_status = "approved"
+    sub.updated_at = datetime.utcnow()
+    await db.commit()
+    return {"status": "approved", "id": subscription_id, "service_name": sub.service_name}
+
+
+@app.post("/api/subscriptions/{subscription_id}/dismiss")
+async def dismiss_subscription(subscription_id: int, db: AsyncSession = Depends(get_db)):
+    """Dismiss a pending subscription (hides it from main listing)."""
+    result = await db.execute(select(Subscription).where(Subscription.id == subscription_id))
+    sub = result.scalar_one_or_none()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    sub.approval_status = "dismissed"
+    sub.status = "cancelled"
+    sub.updated_at = datetime.utcnow()
+    await db.commit()
+    return {"status": "dismissed", "id": subscription_id, "service_name": sub.service_name}
+
+
+@app.post("/api/subscriptions/bulk-approve")
+async def bulk_approve(ids: List[int], db: AsyncSession = Depends(get_db)):
+    """Approve multiple pending subscriptions at once."""
+    from sqlalchemy import update as sql_update
+    await db.execute(
+        sql_update(Subscription)
+        .where(Subscription.id.in_(ids))
+        .values(approval_status="approved", updated_at=datetime.utcnow())
+    )
+    await db.commit()
+    return {"status": "ok", "approved_count": len(ids)}
+
+
+@app.post("/api/subscriptions/bulk-dismiss")
+async def bulk_dismiss(ids: List[int], db: AsyncSession = Depends(get_db)):
+    """Dismiss multiple pending subscriptions at once."""
+    from sqlalchemy import update as sql_update
+    await db.execute(
+        sql_update(Subscription)
+        .where(Subscription.id.in_(ids))
+        .values(approval_status="dismissed", status="cancelled", updated_at=datetime.utcnow())
+    )
+    await db.commit()
+    return {"status": "ok", "dismissed_count": len(ids)}
+
+
+@app.post("/api/seed-pending-candidates")
+async def seed_pending_candidates(db: AsyncSession = Depends(get_db)):
+    """Seed test pending candidates (Steam, Roblox, IFTTT Pro, Loopmasters) for UI testing."""
+    candidates = [
+        {"service_name": "Steam", "category": "gaming", "cost": 279.0, "currency": "CZK", "billing_cycle": "monthly"},
+        {"service_name": "Roblox", "category": "gaming", "cost": 149.0, "currency": "CZK", "billing_cycle": "monthly"},
+        {"service_name": "IFTTT Pro", "category": "productivity", "cost": 89.0, "currency": "CZK", "billing_cycle": "monthly"},
+        {"service_name": "Loopmasters", "category": "music_tools", "cost": 199.0, "currency": "CZK", "billing_cycle": "monthly"},
+    ]
+    added = []
+    for c in candidates:
+        # Skip if already exists by name
+        existing = await db.execute(
+            select(Subscription).where(Subscription.service_name == c["service_name"])
+        )
+        if existing.scalar_one_or_none():
+            continue
+        sub = Subscription(
+            **c,
+            status="active",
+            source="wallet_discovery",
+            approval_status="pending",
+        )
+        db.add(sub)
+        added.append(c["service_name"])
+    await db.commit()
+    return {"status": "ok", "seeded": added}
+
+
+# ============================================================================
+# Scheduler Management Endpoints
+# ============================================================================
+
+@app.get("/api/scheduler/jobs")
+async def list_jobs():
+    """List all scheduled jobs and their next run times."""
+    from scheduler import get_scheduler
+    scheduler = get_scheduler()
+    jobs = []
+    for job in scheduler.get_jobs():
+        jobs.append({
+            "id": job.id,
+            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+            "trigger": str(job.trigger),
+        })
+    return {"running": scheduler.running, "jobs": jobs}
+
+
+@app.post("/api/scheduler/run/{job_id}")
+async def run_job_now(job_id: str):
+    """Manually trigger a scheduled job by ID."""
+    from scheduler import get_scheduler, job_wallet_sync, job_email_sync, job_wallet_match, job_discovery_sweep
+    valid_jobs = {
+        "wallet_sync": job_wallet_sync,
+        "email_sync": job_email_sync,
+        "wallet_match": job_wallet_match,
+        "discovery_sweep": job_discovery_sweep,
+    }
+    if job_id not in valid_jobs:
+        raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'. Valid: {list(valid_jobs)}")
+    import asyncio
+    asyncio.create_task(valid_jobs[job_id]())
+    return {"status": "triggered", "job_id": job_id}
+
+
+# ============================================================================
+# Mount Frontend Static Files (AFTER all API routes to avoid route capture)
+# Prefer frontend/ (simple UI with wallet features), fall back to glass dist.
+# ============================================================================
+
+_base = Path(__file__).parent
+_frontend_candidates = [_base / "frontend", _base / "frontend_glass_dist"]
+for frontend_dir in _frontend_candidates:
+    if frontend_dir.exists() and (frontend_dir / "index.html").exists():
+        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+        break
 
 
 if __name__ == "__main__":
@@ -712,3 +1147,8 @@ if __name__ == "__main__":
     load_dotenv()
     port = int(os.getenv("API_PORT", "8000"))
     uvicorn.run("api:app", host="0.0.0.0", port=port, reload=True)
+
+
+
+
+
