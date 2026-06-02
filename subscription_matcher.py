@@ -226,7 +226,7 @@ class SubscriptionMatcher:
                 _cost = round(abs(_recent.amount or 0), 2)
                 await db.execute(
                     _text("UPDATE subscriptions SET confirmed_by_wallet=1, last_payment_date=:lp, actual_cost=:ac, updated_at=:ua WHERE id=:id"),
-                    {"lp": _last, "ac": _cost, "ua": _dt.utcnow(), "id": sub.id}
+                    {"lp": _last.strftime("%Y-%m-%d") if hasattr(_last, "strftime") else str(_last)[:10], "ac": _cost, "ua": _dt.utcnow(), "id": sub.id}
                 )
                 # Don't change approval_status here — that's user's call
 
