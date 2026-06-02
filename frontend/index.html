@@ -40,8 +40,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:1
 .bar-top .meta .spacer{flex:1}
 .bar-top .meta .user{color:var(--yellow)}
 .bar-top .mtd{padding:10px 16px;border-left:1px solid var(--yellow);display:flex;align-items:baseline;gap:8px;background:var(--bg)}
-.mtd .lbl{color:var(--text-dim);font-size:10px;letter-spacing:1.4px}
-.mtd .num{color:var(--yellow);font-size:17px;font-weight:700}
+.mtd .lbl{color:var(--text-dim);font-size:11px;letter-spacing:1.4px}
+.mtd .num{color:var(--yellow);font-size:20px;font-weight:700}
 .mtd .delta{color:var(--orange);font-size:11px}
 .ticker{border:1px solid var(--hairline-strong);background:var(--surface);
   height:24px;overflow:hidden;position:relative;font-size:11px;letter-spacing:.5px;flex:0 0 auto}
@@ -62,29 +62,29 @@ body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:1
 .pane-rule .hint{margin-left:auto;color:var(--text-mute);font-size:9.5px;letter-spacing:1px}
 .register{border-color:var(--yellow)}
 .reg-scroll{flex:1;overflow:auto}
-table.reg{width:100%;border-collapse:collapse;font-size:11px}
+table.reg{width:100%;border-collapse:collapse;font-size:13px}
 table.reg thead th{position:sticky;top:0;background:var(--bg);text-align:left;
-  font-weight:400;font-size:9.5px;letter-spacing:1.6px;color:var(--text-mute);
+  font-weight:600;font-size:11px;letter-spacing:1.4px;color:var(--text-dim);
   text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--hairline-strong);z-index:2;cursor:pointer}
 table.reg thead th:hover{color:var(--text-dim)}
 table.reg th.r,table.reg td.c-mo{text-align:right}
 .reg-row{border-bottom:1px dashed var(--hairline);cursor:pointer}
 .reg-row:nth-child(even){background:rgba(255,255,255,0.012)}
 .reg-row:hover{background:rgba(255,230,0,0.04)}
-.reg-row td{padding:8px 14px;vertical-align:middle}
+.reg-row td{padding:10px 14px;vertical-align:middle}
 .reg-row.is-flagged{color:var(--text-dim)}
 .c-idx{color:var(--text-mute)}
 .svc{display:inline-flex;align-items:center;gap:8px}
 .svc-name{font-weight:600;color:var(--text)}
 .reg-row.is-flagged .svc-name{color:var(--text-dim)}
 .c-plan{color:var(--text-dim)}
-.c-cat{font-size:10px;letter-spacing:1.2px}
+.c-cat{font-size:11px;letter-spacing:1.2px}
 .c-mo{color:var(--yellow);font-weight:600;text-align:right}
 .reg-row.is-flagged .c-mo{color:var(--text-dim)}
 .c-use .bar{letter-spacing:0;color:var(--text)}
 .c-use .bar--warn{color:var(--orange)}
 .c-since{color:var(--text-dim)}
-.c-status{font-size:10px;letter-spacing:1.2px;color:var(--green);white-space:nowrap}
+.c-status{font-size:11px;letter-spacing:1.2px;color:var(--green);white-space:nowrap}
 .reg-row.is-flagged .c-status{color:var(--orange)}
 .c-status .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .dot--ok{background:var(--green)}
@@ -92,16 +92,16 @@ table.reg th.r,table.reg td.c-mo{text-align:right}
 
 /* ── Logo icon — square with image or monogram fallback ── */
 .logo-wrap{
-  width:20px;height:20px;flex:0 0 auto;border-radius:3px;overflow:hidden;
+  width:28px;height:28px;flex:0 0 auto;border-radius:4px;overflow:hidden;
   display:inline-flex;align-items:center;justify-content:center;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.10);
 }
 .logo-wrap img{width:100%;height:100%;object-fit:contain;display:block}
 .logo-wrap .logo-fallback{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
-  font-family:var(--mono);font-weight:700;font-size:7px;line-height:1;
+  font-family:var(--mono);font-weight:700;font-size:11px;line-height:1;letter-spacing:.5px;
 }
-.logo-wrap-sm{width:16px;height:16px;border-radius:2px}
+.logo-wrap-sm{width:20px;height:20px;border-radius:3px}
 
 .reg-foot{border-top:1px solid var(--yellow);background:var(--yellow-soft);
   padding:9px 14px;display:flex;gap:24px;font-size:11px;flex-wrap:wrap}
@@ -314,8 +314,20 @@ function getBrandDomain(name) {
   for (const [k, v] of Object.entries(SVC_DOMAIN)) {
     if (n.includes(k)) return v;
   }
-  // Derive domain from name: "Native Instruments" → "native-instruments.com" fallback
   return null;
+}
+
+// Heuristic: derive a plausible domain from the name for the Clearbit lookup.
+// "Meta Platforms" -> "metaplatforms.com", "Vinted" -> "vinted.com", etc.
+function getDerivedDomain(name) {
+  if (!name) return null;
+  // Strip common suffixes / words that don't help the domain
+  const cleaned = name.toLowerCase()
+    .replace(/(inc|llc|ltd|gmbh|s\.?a\.?|s\.?r\.?o\.?|corp|corporation|company|co|ag|plc|bv|oy|ab|as|app|service|services|the)/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+  if (!cleaned) return null;
+  return `${cleaned}.com`;
 }
 
 function getFallbackColor(name) {
@@ -342,43 +354,70 @@ function mono(name) { return name.trim().substring(0,2).toUpperCase(); }
  */
 function logoHtml(sub, size) {
   const isSmall  = size === 'sm';
-  const px       = isSmall ? 16 : 20;
+  const px       = isSmall ? 20 : 28;
   const sizeClass= isSmall ? 'logo-wrap logo-wrap-sm' : 'logo-wrap';
   const fallbackBg = getFallbackColor(sub.service_name);
   const fallbackFg = isDark(fallbackBg) ? '#fff' : '#0a0a0b';
   const m = mono(sub.service_name);
+  const monoFs = isSmall ? 9 : 11;
 
-  // Use icon_url from API if present (already has Clearbit URL)
-  const iconUrl = sub.icon_url || (() => {
-    const domain = getBrandDomain(sub.service_name);
-    return domain ? `https://logo.clearbit.com/${domain}` : null;
-  })();
+  // Build candidate URLs in priority order:
+  //   1) sub.icon_url from API (often a Clearbit URL or sometimes a bad one)
+  //   2) constructed Clearbit URL from our domain map
+  //   3) constructed Clearbit URL from a name-derived domain (best effort)
+  const cands = [];
+  if (sub.icon_url) cands.push(sub.icon_url);
+  const mapped = getBrandDomain(sub.service_name);
+  if (mapped) cands.push(`https://logo.clearbit.com/${mapped}`);
+  const derived = getDerivedDomain(sub.service_name);
+  if (derived && derived !== mapped) cands.push(`https://logo.clearbit.com/${derived}`);
 
-  if (iconUrl) {
-    const id = 'logo_' + sub.id;
-    return `<span class="${sizeClass}" style="background:#fff"
-      id="${id}"
-      data-fb-bg="${fallbackBg}" data-fb-fg="${fallbackFg}" data-mono="${m}" data-sm="${isSmall?1:0}">
-      <img src="${iconUrl}" width="${px}" height="${px}"
-        onerror="logoFallback('${id}')"
-        onload="this.parentElement.style.background='#fff'"
-        style="display:block">
+  if (cands.length === 0) {
+    return `<span class="${sizeClass}" style="background:${fallbackBg}">
+      <span class="logo-fallback" style="color:${fallbackFg};font-size:${monoFs}px">${m}</span>
     </span>`;
   }
 
-  // No logo URL — render monogram immediately
-  return `<span class="${sizeClass}" style="background:${fallbackBg}">
-    <span class="logo-fallback" style="color:${fallbackFg};font-size:${isSmall?6:7}px">${m}</span>
+  // First candidate as <img>. We track the candidate index in a closure
+  // variable on the <img> itself (img._candIdx) so the onerror chain
+  // works even when Clearbit 302-redirects to a different final URL.
+  const id = 'logo_' + sub.id;
+  const candsJson = JSON.stringify(cands);
+  return `<span class="${sizeClass}" style="background:#fff"
+    id="${id}"
+    data-fb-bg="${fallbackBg}" data-fb-fg="${fallbackFg}" data-mono="${m}" data-sm="${isSmall?1:0}" data-fs="${monoFs}">
+    <img width="${px}" height="${px}"
+      data-cands="${candsJson.replace(/"/g, '&quot;')}" data-idx="0"
+      src="${cands[0]}"
+      onload="this.parentElement.style.background='#fff'"
+      onerror="logoChain(this)"
+      style="display:block;object-fit:contain">
   </span>`;
 }
 
+// Try the next candidate URL; on final failure, render the monogram.
+function logoChain(img) {
+  const cands = JSON.parse(img.dataset.cands || '[]');
+  const next = parseInt(img.dataset.idx || '0', 10) + 1;
+  if (next < cands.length && cands[next]) {
+    img.dataset.idx = String(next);
+    img.src = cands[next];
+    return;
+  }
+  // No more candidates — swap to monogram fallback.
+  const el = img.parentElement;
+  if (!el) return;
+  el.style.background = el.dataset.fbBg;
+  const fs = el.dataset.fs || 11;
+  el.innerHTML = `<span class="logo-fallback" style="color:${el.dataset.fbFg};font-size:${fs}px">${el.dataset.mono}</span>`;
+}
+
 function logoFallback(id) {
+  // Legacy entrypoint — now handled by logoChain() inside the span.
   const el = document.getElementById(id);
   if (!el) return;
-  const bg = el.dataset.fbBg, fg = el.dataset.fbFg, m = el.dataset.mono;
-  const sm = el.dataset.sm === '1';
-  el.style.background = bg;
-  el.innerHTML = `<span class="logo-fallback" style="color:${fg};font-size:${sm?6:7}px">${m}</span>`;
+  const img = el.querySelector('img');
+  if (img) { img.src = ''; }
 }
 
 function monthly(sub) {
