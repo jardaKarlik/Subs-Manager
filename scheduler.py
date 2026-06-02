@@ -1,11 +1,17 @@
 """
 Scheduled sync jobs for Subscription Manager.
 
-Jobs:
-  - Daily   06:00 UTC  — wallet sync (last 7 days)
-  - Daily   06:10 UTC  — email sync  (last 3 days)
-  - Daily   06:20 UTC  — wallet match (cross-reference + billing cycle inference)
-  - Weekly  Sun 07:00  — wallet candidates refresh (discovery sweep)
+Jobs (every 3 days at 19:00 UTC):
+  - 19:00 UTC — wallet sync (last 5 days)
+  - 19:05 UTC — email sync  (last 5 days)
+  - 19:15 UTC — wallet match (cross-reference + billing cycle inference)
+  - Weekly  Sun 07:00 — wallet candidates refresh (discovery sweep)
+
+Uses interval=3 days (not cron) so the schedule is independent of the day
+of week it was first started. Initial deployment triggers a one-time backfill
+via /api/parse-emails and /api/sync-wallet manually; subsequent runs are
+incremental with a 2-day overlap buffer (since_days=5) to guarantee no
+transactions or emails are missed across the 3-day gap.
 
 Integrates with FastAPI lifecycle via startup/shutdown hooks.
 """
@@ -32,31 +38,39 @@ def get_scheduler() -> AsyncIOScheduler:
 # ── Job functions ─────────────────────────────────────────────────────────────
 
 async def job_wallet_sync():
-    """Daily: pull last 7 days of wallet records."""
+    """Every 3 days: pull last 5 days of wallet records.
+
+    2-day overlap buffer over the 3-day cycle guarantees that no transactions
+    slip through due to timezone shifts or processing delays.
+    """
     logger.info("[cron] wallet sync start")
     try:
         from wallet_fetcher import WalletFetcher
-        result = await WalletFetcher().sync(since_days=7)
+        result = await WalletFetcher().sync(since_days=5)
         logger.info("[cron] wallet sync done: %s", result)
     except Exception as exc:
         logger.error("[cron] wallet sync failed: %s", exc)
 
 
 async def job_email_sync():
-    """Daily: pull last 3 days of emails from all sources."""
+    """Every 3 days: pull last 5 days of emails from all sources.
+
+    2-day overlap buffer over the 3-day cycle guarantees that no emails
+    slip through due to timezone shifts or processing delays.
+    """
     logger.info("[cron] email sync start")
     try:
         from email_fetcher import EmailFetcher
         from database import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
-            result = await EmailFetcher().process_emails(db=db, since_days=3, max_results=200)
+            result = await EmailFetcher().process_emails(db=db, since_days=5, max_results=500)
         logger.info("[cron] email sync done: %s", result)
     except Exception as exc:
         logger.error("[cron] email sync failed: %s", exc)
 
 
 async def job_wallet_match():
-    """Daily: cross-reference wallet records against subscriptions."""
+    """Every 3 days: cross-reference wallet records against subscriptions."""
     logger.info("[cron] wallet match start")
     try:
         from subscription_matcher import SubscriptionMatcher
@@ -92,34 +106,34 @@ def start_scheduler():
         logger.warning("Scheduler already running — skipping start")
         return
 
-    # Daily wallet sync at 06:00 UTC
+    # Every 3 days at 19:00 UTC — wallet sync
     scheduler.add_job(
         job_wallet_sync,
-        CronTrigger(hour=6, minute=0),
+        CronTrigger(hour=19, minute=0, day="*/3"),
         id="wallet_sync",
         replace_existing=True,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,  # 1h grace — long ops can take time
     )
 
-    # Daily email sync at 06:10 UTC
+    # Every 3 days at 19:05 UTC — email sync (5 min after wallet)
     scheduler.add_job(
         job_email_sync,
-        CronTrigger(hour=6, minute=10),
+        CronTrigger(hour=19, minute=5, day="*/3"),
         id="email_sync",
         replace_existing=True,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
     )
 
-    # Daily cross-reference at 06:20 UTC (after both syncs finish)
+    # Every 3 days at 19:15 UTC — wallet match (10 min after email start)
     scheduler.add_job(
         job_wallet_match,
-        CronTrigger(hour=6, minute=20),
+        CronTrigger(hour=19, minute=15, day="*/3"),
         id="wallet_match",
         replace_existing=True,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
     )
 
-    # Weekly discovery sweep — Sunday 07:00 UTC
+    # Weekly discovery sweep — Sunday 07:00 UTC (unchanged)
     scheduler.add_job(
         job_discovery_sweep,
         CronTrigger(day_of_week="sun", hour=7, minute=0),
