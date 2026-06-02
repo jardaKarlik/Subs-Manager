@@ -143,7 +143,7 @@ class FinancialRecord(Base):
     __tablename__ = "financial_records"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    date: Mapped[str] = mapped_column(String(20), nullable=True)
+    date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), nullable=True)
     payee: Mapped[str] = mapped_column(String(255), nullable=True)

@@ -190,7 +190,7 @@ class SubscriptionMatcher:
                 last_date = max(r.date for r in recs if r.date)
                 total     = sum(abs(r.amount) for r in recs)
                 sub.confirmed_by_wallet  = True
-                sub.last_payment_date    = last_date
+                sub.last_payment_date    = last_date.strftime("%Y-%m-%d") if hasattr(last_date, 'strftime') else str(last_date)[:10]
                 sub.actual_cost          = round(total / max(len(recs), 1), 2)
                 # Don't change approval_status here — that's user's call
 
@@ -390,7 +390,7 @@ class SubscriptionMatcher:
                 status='active',
                 source='wallet_discovery',
                 confirmed_by_wallet=True,
-                last_payment_date=last_pay,
+                last_payment_date=last_pay.strftime("%Y-%m-%d") if hasattr(last_pay, 'strftime') else str(last_pay)[:10],
                 actual_cost=flat_fee,
                 approval_status='approved',
                 start_date=min(r.date for r in records if r.date).strftime('%Y-%m-%d'),

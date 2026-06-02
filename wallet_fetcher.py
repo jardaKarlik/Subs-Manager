@@ -76,7 +76,7 @@ def _record_to_model(rec: dict, account_map: dict) -> FinancialRecord:
 
     return FinancialRecord(
         id=rec["id"],
-        date=(_parse_dt(rec.get("recordDate")) or datetime.utcnow()).strftime("%Y-%m-%d"),
+        date=_parse_dt(rec.get("recordDate")) or datetime.utcnow(),
         amount=rec.get("amount", {}).get("value", 0.0),
         currency=rec.get("amount", {}).get("currencyCode", "CZK"),
         payee=rec.get("counterParty") or "",
