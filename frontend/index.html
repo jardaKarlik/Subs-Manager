@@ -79,8 +79,12 @@ table.reg th.r,table.reg td.c-mo{text-align:right}
 .reg-row.is-flagged .svc-name{color:var(--text-dim)}
 .c-plan{color:var(--text-dim)}
 .c-cat{font-size:11px;letter-spacing:1.2px}
-.c-mo{color:var(--yellow);font-weight:600;text-align:right}
+.c-mo{color:var(--yellow);font-weight:600;text-align:right;white-space:nowrap}
 .reg-row.is-flagged .c-mo{color:var(--text-dim)}
+.c-mo-sub{text-align:right;padding:8px 6px;font-size:11px;color:var(--text-dim);border-left:1px solid rgba(255,230,0,0.06)}
+.c-total-spent{text-align:right;padding:8px 12px;white-space:nowrap}
+.c-last{text-align:center;padding:8px 8px;white-space:nowrap;color:var(--text-mute);font-size:10px}
+th{cursor:pointer;user-select:none}
 .c-use .bar{letter-spacing:0;color:var(--text)}
 .c-use .bar--warn{color:var(--orange)}
 .c-since{color:var(--text-dim)}
@@ -138,6 +142,11 @@ table.reg th.r,table.reg td.c-mo{text-align:right}
 .flagged-foot{border-top:1px solid var(--orange);background:var(--orange-soft);
   padding:8px 14px;font-size:11px;color:var(--orange);display:flex;justify-content:space-between}
 .flagged-foot .v{font-weight:700}
+/* ── Monthly cost span header ── */
+.hdr-cost th.hdr-cost{border-bottom:2px solid var(--yellow);background:rgba(255,230,0,0.04);text-align:center}
+.hdr-cost-sub th{font-size:9px;letter-spacing:1.2px;padding:6px 8px;color:var(--text-mute);font-weight:400}
+.hdr-cost-sub th:first-child{border-left:1px solid var(--yellow-soft)}
+
 .bar-bot{border:1px solid var(--hairline-strong);background:var(--surface);
   padding:7px 14px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;
   font-size:10.5px;letter-spacing:1.2px;color:var(--text-dim)}
@@ -197,19 +206,27 @@ table.reg th.r,table.reg td.c-mo{text-align:right}
       <div class="reg-scroll">
         <table class="reg">
           <thead>
-            <tr>
-              <th onclick="sortBy('idx')">#</th>
-              <th onclick="sortBy('service_name')">SERVICE</th>
-              <th>PLAN</th>
-              <th onclick="sortBy('category')">CAT</th>
-              <th class="r" onclick="sortBy('cost')">$/MO</th>
-              <th>USE</th>
-              <th onclick="sortBy('start_date')">SINCE</th>
-              <th onclick="sortBy('status')">STATUS</th>
+            <tr class="hdr-cost">
+              <th rowspan="2" onclick="sortBy('idx')">#</th>
+              <th rowspan="2" onclick="sortBy('service_name')">SERVICE</th>
+              <th rowspan="2">PLAN</th>
+              <th rowspan="2" onclick="sortBy('category')">CAT</th>
+              <th colspan="4" class="hdr-cost">MONTHLY COST</th>
+              <th rowspan="2">USE</th>
+              <th rowspan="2">TOTAL SPEND</th>
+              <th rowspan="2">LAST</th>
+              <th rowspan="2" onclick="sortBy('start_date')">SINCE</th>
+              <th rowspan="2" onclick="sortBy('status')">STATUS</th>
+            </tr>
+            <tr class="hdr-cost-sub">
+              <th onclick="sortBy('cost_usd')">Total</th>
+              <th onclick="sortBy('cost_usd')">USD</th>
+              <th onclick="sortBy('cost_czk')">CZK</th>
+              <th onclick="sortBy('cost_eur')">EUR</th>
             </tr>
           </thead>
           <tbody id="reg-tbody">
-            <tr class="state-row"><td colspan="8"><span class="spinner">⟳</span> LOADING…</td></tr>
+            <tr class="state-row"><td colspan="13"><span class="spinner">⟳</span> LOADING…</td></tr>
           </tbody>
         </table>
       </div>
@@ -531,7 +548,7 @@ function sortedSubs(arr) {
 function renderTable() {
   const tbody = document.getElementById('reg-tbody');
   const subs  = sortedSubs(filteredSubs());
-  if (!subs.length) { tbody.innerHTML='<tr class="state-row"><td colspan="8">NO RESULTS</td></tr>'; updateFooter([]); return; }
+  if (!subs.length) { tbody.innerHTML='<tr class="state-row"><td colspan="13">NO RESULTS</td></tr>'; updateFooter([]); return; }
 
   tbody.innerHTML = subs.map((s,i) => {
     const mo       = monthly(s);
@@ -539,13 +556,27 @@ function renderTable() {
     const catColor = CAT_COLOR[s.category]||'#8a8a8e';
     const catLabel = (s.category||'other').replace('_',' ').toUpperCase();
     const dot      = flagged ? '<span class="dot dot--warn"></span>FLAGGED' : '<span class="dot dot--ok"></span>ACTIVE';
+    const spend = getWalletSpend(s.id);
+    const hasSpend = spend && spend.payments > 0;
+    const totalSpent = hasSpend ? fmtMoney(spend.total_spent, spend.currency) : '—';
+    const lastDate = hasSpend ? (spend.last_payment || '').substring(0,10) : '—';
+    const sparklineHtml = hasSpend ? renderSparkline(s.id, spend.dates, spend.total_spent) : usageBar(s);
+    const _usd = toUsd(mo, s.currency);
+    const _czk = s.currency === 'CZK' ? mo : (s.currency === 'USD' ? mo / 0.043 : 0);
+    const _eur = s.currency === 'EUR' ? mo : 0;
+
     return `<tr class="reg-row${flagged?' is-flagged':''}" data-id="${s.id}">
       <td class="c-idx">${String(i+1).padStart(2,'0')}</td>
       <td class="c-svc"><span class="svc">${logoHtml(s,'md')}<span class="svc-name">${s.service_name.toUpperCase()}</span></span></td>
       <td class="c-plan">${extractPlan(s.notes)||'—'}</td>
       <td class="c-cat" style="color:${catColor}">${catLabel}</td>
-      <td class="c-mo">${mo.toFixed(2)} ${s.currency||'USD'}</td>
-      <td class="c-use">${usageBar(s)}</td>
+      <td class="c-mo">${_usd.toFixed(2)}</td>
+      <td class="c-mo-sub">${_usd.toFixed(2)}</td>
+      <td class="c-mo-sub">${_czk > 0 ? _czk.toFixed(0) : '—'}</td>
+      <td class="c-mo-sub">${_eur > 0 ? _eur.toFixed(2) : '—'}</td>
+      <td class="c-use">${sparklineHtml}</td>
+      <td class="c-total-spent" style="color:${hasSpend ? 'var(--yellow)' : 'var(--text-mute)'};font-weight:${hasSpend ? '600' : '400'}">${totalSpent}</td>
+      <td class="c-last" style="color:var(--text-dim);font-size:10px">${lastDate}</td>
       <td class="c-since">${fmtSince(s.start_date)}</td>
       <td class="c-status">${dot}</td>
     </tr>`;
@@ -598,6 +629,30 @@ function renderFlagged(subs) {
       <span class="flag-cost">−${monthly(s).toFixed(2)} ${s.currency||''}/MO</span>
     </li>`).join('');
   document.getElementById('flagged-savings').textContent=`${savings.toFixed(2)}/MO · ${Math.round(savings*12)}/YR`;
+}
+
+// ── Wallet spend map: sub_id → {total_spent, payments, last_payment, dates} ──
+let spendMap = {};
+
+function getWalletSpend(subId) {
+  return spendMap[subId] || null;
+}
+
+/** Render a tiny sparkline from wallet dates. Just shows dots for months with payments. */
+function renderSparkline(subId, dates, totalSpent) {
+  if (!dates || !dates.length) {
+    return `<span class="bar" style="color:var(--text-mute);font-size:9px">NO DATA</span>`;
+  }
+  // Group by month, show up to 12 dots
+  const months = {};
+  dates.forEach(d => { months[d] = (months[d] || 0) + 1; });
+  const keys = Object.keys(months).sort().slice(-12);
+  const max = Math.max(...Object.values(months), 1);
+  const dots = keys.map(m => {
+    const h = Math.round((months[m] / max) * 14);
+    return '<span style="display:inline-block;width:4px;height:' + Math.max(2, h) + 'px;background:var(--yellow);opacity:' + (0.3 + (months[m]/max) * 0.7) + ';margin:0 1px;border-radius:1px" title="' + m + ': ' + months[m] + 'x"></span>';
+  }).join('');
+  return '<span style="display:inline-flex;align-items:flex-end;gap:0;height:16px">' + dots + '</span>';
 }
 
 // ── Simple FX rates (matching backend, for client-side formatting) ──
@@ -735,12 +790,14 @@ async function loadAll() {
   document.getElementById('status-dot').textContent='◌ FETCHING';
   document.getElementById('status-dot').style.color='var(--text-dim)';
   try {
-    const subsResp=await fetch(`${API}/api/subscriptions?page_size=500&sort_by=cost&sort_order=desc`);
+    const [subsResp, spendResp] = await Promise.all([
+      fetch(`${API}/api/subscriptions?page_size=500&sort_by=cost&sort_order=desc`),
+      fetch(`${API}/api/wallet-spend-map`).then(r => r.ok ? r.json() : {map: {}})
+    ]);
     if(!subsResp.ok) throw new Error(`HTTP ${subsResp.status}`);
     const subsData=await subsResp.json();
     allSubs=subsData.items||[];
-    let events=[];
-    try{const ev=await fetch(`${API}/api/events?months=12`);if(ev.ok)events=(await ev.json()).events||[];}catch(e){}
+    spendMap = (spendResp && spendResp.map) || {};
     renderTable();renderTicker(allSubs);renderAllocation(allSubs);renderFlagged(allSubs);renderBurnRate();renderStats();
     lastSync=Date.now();updateSyncAgo();
     document.getElementById('status-dot').textContent='● LIVE';
@@ -748,7 +805,7 @@ async function loadAll() {
     document.getElementById('bot-ready').textContent='READY_';
   } catch(err) {
     console.error(err);
-    document.getElementById('reg-tbody').innerHTML=`<tr class="state-row"><td colspan="8">⚠ API ERROR — ${err.message}</td></tr>`;
+    document.getElementById('reg-tbody').innerHTML=`<tr class="state-row"><td colspan="13">⚠ API ERROR — ${err.message}</td></tr>`;
     document.getElementById('status-dot').textContent='✗ OFFLINE';
     document.getElementById('status-dot').style.color='var(--orange)';
     document.getElementById('bot-ready').textContent='ERR_';

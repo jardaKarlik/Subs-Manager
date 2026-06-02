@@ -981,6 +981,32 @@ async def wallet_spend(db: AsyncSession = Depends(get_db)):
     }
 
 
+@app.get("/api/wallet-spend-map")
+async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
+    """Map of subscription_id -> spend data (dates for sparklines)."""
+    from database import FinancialRecord
+    rows = await db.execute(
+        select(
+            FinancialRecord.matched_subscription_id,
+            FinancialRecord.amount,
+            FinancialRecord.date,
+            FinancialRecord.currency,
+        )
+        .where(FinancialRecord.matched_subscription_id != None)  # noqa: E711
+        .order_by(FinancialRecord.matched_subscription_id, FinancialRecord.date)
+    )
+    subs = {}
+    for r in rows.all():
+        sid = r.matched_subscription_id
+        if sid not in subs:
+            subs[sid] = {"total_spent": 0.0, "payments": 0, "last_payment": None, "currency": r.currency, "dates": []}
+        subs[sid]["total_spent"] += abs(r.amount or 0)
+        subs[sid]["payments"] += 1
+        subs[sid]["last_payment"] = r.date.isoformat() if r.date else None
+        subs[sid]["dates"].append(r.date.isoformat()[:7] if r.date else None)
+    return {"map": subs}
+
+
 @app.post("/api/match-wallet")
 async def match_wallet():
     """Cross-reference financial records against subscriptions."""
