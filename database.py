@@ -159,50 +159,34 @@ class FinancialRecord(Base):
 
 
 async def init_db():
-    """Initialize database - create all tables and apply one-time migrations."""
-    from sqlalchemy import text
+    """Initialize database - create all tables and apply column migrations."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        from sqlalchemy import text
+        # Fix financial_records.id: old schema INTEGER, must be VARCHAR for UUIDs.
+        # Use ALTER COLUMN with explicit cast (PostgreSQL); silently skip on SQLite.
+        try:
+            await conn.execute(text(
+                "ALTER TABLE financial_records "
+                "ALTER COLUMN id TYPE VARCHAR(64) USING id::VARCHAR(64)"
+            ))
+        except Exception:
+            pass  # Already correct type, or SQLite (no-op)
 
-        # Create migrations tracking table
-        await conn.execute(text(
-            "CREATE TABLE IF NOT EXISTS _migrations "
-            "(id VARCHAR(64) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-        ))
-
-        # Each migration runs exactly once, tracked by id
-        pending = [
-            ("001_subscriptions_wallet_cols",
-             "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS confirmed_by_wallet INTEGER DEFAULT 0"),
-            ("002_subscriptions_last_payment",
-             "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_payment_date VARCHAR(10)"),
-            ("003_subscriptions_actual_cost",
-             "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS actual_cost FLOAT"),
-            ("004_subscriptions_approval_status",
-             "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)"),
-            ("005_financial_records_matched_sub",
-             "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS matched_subscription_id INTEGER"),
-            ("006_financial_records_fetched_at",
-             "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS fetched_at VARCHAR(30)"),
-            ("007_financial_records_id_to_varchar",
-             "ALTER TABLE financial_records ALTER COLUMN id TYPE VARCHAR(64) USING id::VARCHAR(64)"),
+        # Add columns that may be missing from older schema deployments
+        migrations = [
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS confirmed_by_wallet INTEGER DEFAULT 0",
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_payment_date VARCHAR(10)",
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS actual_cost FLOAT",
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)",
+            "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS matched_subscription_id INTEGER",
+            "ALTER TABLE financial_records ADD COLUMN IF NOT EXISTS fetched_at VARCHAR(30)",
         ]
-
-        for migration_id, sql in pending:
+        for sql in migrations:
             try:
-                exists = await conn.execute(
-                    text("SELECT 1 FROM _migrations WHERE id = :id"),
-                    {"id": migration_id}
-                )
-                if exists.fetchone():
-                    continue
                 await conn.execute(text(sql))
-                await conn.execute(
-                    text("INSERT INTO _migrations (id) VALUES (:id)"),
-                    {"id": migration_id}
-                )
             except Exception:
-                pass  # SQLite skips PostgreSQL-only syntax gracefully
+                pass  # Column may already exist or table may not exist yet
 
 
 async def get_db():
