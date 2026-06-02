@@ -1087,7 +1087,7 @@ async def seed_pending_candidates(db: AsyncSession = Depends(get_db)):
 
 # Debug error handler (dev) — shows the real error in the response
 import traceback
-from starlette.responses import JSONResponse
+from fastapi.responses import JSONResponse
 
 @app.exception_handler(Exception)
 async def _debug_exception_handler(request, exc):
