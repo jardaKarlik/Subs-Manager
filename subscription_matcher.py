@@ -217,9 +217,16 @@ class SubscriptionMatcher:
                 matched_sub_ids.add(sub.id)
                 last_date = max(r.date for r in recs if r.date)
                 total     = sum(abs(r.amount) for r in recs)
-                sub.confirmed_by_wallet  = True
-                sub.last_payment_date    = last_date.strftime("%Y-%m-%d") if hasattr(last_date, 'strftime') else str(last_date)[:10]
-                sub.actual_cost          = round(total / max(len(recs), 1), 2)
+                sub.confirmed_by_wallet  = 1  # INTEGER column in postgres
+                # Keep as datetime object (TIMESTAMP column - do not stringify)
+                if hasattr(last_date, 'date'):
+                    sub.last_payment_date = last_date  # already datetime
+                else:
+                    from datetime import datetime
+                    sub.last_payment_date = datetime.fromisoformat(str(last_date)[:10])
+                # actual_cost = most recent single payment amount
+                most_recent = sorted(recs, key=lambda r: r.date or datetime.min)[-1]
+                sub.actual_cost = round(abs(most_recent.amount or 0), 2)
                 # Don't change approval_status here — that's user's call
 
             await db.commit()
@@ -417,8 +424,8 @@ class SubscriptionMatcher:
                 billing_cycle='monthly',
                 status='active',
                 source='wallet_discovery',
-                confirmed_by_wallet=True,
-                last_payment_date=last_pay.strftime("%Y-%m-%d") if hasattr(last_pay, 'strftime') else str(last_pay)[:10],
+                confirmed_by_wallet=1,
+                last_payment_date=last_pay if hasattr(last_pay, 'date') else None,
                 actual_cost=flat_fee,
                 approval_status='approved',
                 start_date=min(r.date for r in records if r.date).strftime('%Y-%m-%d'),

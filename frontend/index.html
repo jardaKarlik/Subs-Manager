@@ -560,6 +560,8 @@ function renderTable() {
     const hasSpend = spend && spend.payments > 0;
     const totalSpent = hasSpend ? fmtMoney(spend.total_spent, spend.currency) : '—';
     const lastDate = hasSpend ? (spend.last_payment || '').substring(0,10) : '—';
+    // SINCE: use first wallet record date when available (most accurate), else start_date
+    const sinceDate = hasSpend && spend.first_payment ? spend.first_payment.substring(0,7) : fmtSince(s.start_date);
     const sparklineHtml = hasSpend ? renderSparkline(s.id, spend.dates, spend.total_spent) : usageBar(s);
     const _usd = toUsd(mo, s.currency);
     const _czk = s.currency === 'CZK' ? mo : (s.currency === 'USD' ? mo / 0.043 : 0);
@@ -577,7 +579,7 @@ function renderTable() {
       <td class="c-use">${sparklineHtml}</td>
       <td class="c-total-spent" style="color:${hasSpend ? 'var(--yellow)' : 'var(--text-mute)'};font-weight:${hasSpend ? '600' : '400'}">${totalSpent}</td>
       <td class="c-last" style="color:var(--text-dim);font-size:10px">${lastDate}</td>
-      <td class="c-since">${fmtSince(s.start_date)}</td>
+      <td class="c-since">${sinceDate}</td>
       <td class="c-status">${dot}</td>
     </tr>`;
   }).join('');

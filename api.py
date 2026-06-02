@@ -983,7 +983,13 @@ async def wallet_spend(db: AsyncSession = Depends(get_db)):
 
 @app.get("/api/wallet-spend-map")
 async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
-    """Map of subscription_id -> spend data (dates for sparklines)."""
+    """
+    Map of subscription_id -> spend data.
+    total_spent = SUM of all matched payment amounts (absolute values).
+    first_payment = oldest record date (shown in SINCE column).
+    last_payment  = most recent record date.
+    dates = list of YYYY-MM month strings for sparkline.
+    """
     from database import FinancialRecord
     rows = await db.execute(
         select(
@@ -999,11 +1005,24 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
     for r in rows.all():
         sid = r.matched_subscription_id
         if sid not in subs:
-            subs[sid] = {"total_spent": 0.0, "payments": 0, "last_payment": None, "currency": r.currency, "dates": []}
-        subs[sid]["total_spent"] += abs(r.amount or 0)
-        subs[sid]["payments"] += 1
+            subs[sid] = {
+                "total_spent": 0.0,
+                "payments": 0,
+                "first_payment": r.date.isoformat() if r.date else None,
+                "last_payment": None,
+                "currency": r.currency,
+                "dates": [],
+            }
+        amt = abs(r.amount or 0)
+        # Only count expense records (negative amounts = money out)
+        if (r.amount or 0) < 0:
+            subs[sid]["total_spent"] += amt
+            subs[sid]["payments"] += 1
         subs[sid]["last_payment"] = r.date.isoformat() if r.date else None
         subs[sid]["dates"].append(r.date.isoformat()[:7] if r.date else None)
+    # Round total_spent
+    for v in subs.values():
+        v["total_spent"] = round(v["total_spent"], 2)
     return {"map": subs}
 
 
