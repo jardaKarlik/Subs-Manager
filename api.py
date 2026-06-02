@@ -1012,8 +1012,17 @@ async def match_wallet():
     """Cross-reference financial records against subscriptions."""
     from subscription_matcher import SubscriptionMatcher
     matcher = SubscriptionMatcher()
-    match_result = await matcher.match_all()
-    cycle_result = await matcher.infer_billing_cycles()
+    try:
+        match_result = await matcher.match_all()
+        cycle_result = await matcher.infer_billing_cycles()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "detail": str(e), "trace": traceback.format_exc().splitlines()[-5:]}
+        )
     return {"status": "ok", **match_result, **cycle_result}
 
 
