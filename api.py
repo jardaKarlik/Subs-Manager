@@ -441,16 +441,31 @@ async def parse_emails(
     Default: 1 year back, 50 emails per source.
     """
     try:
+        # Smart since_days: if we already have processed emails, only fetch newer ones
+        # to avoid hammering Composio with already-seen messages
+        effective_since_days = req.since_days
+        last_processed = await db.execute(
+            select(func.max(ProcessedEmail.processed_date))
+        )
+        last_date = last_processed.scalar()
+        if last_date:
+            from datetime import timezone
+            if isinstance(last_date, str):
+                last_date = datetime.fromisoformat(last_date)
+            days_since = (datetime.utcnow() - last_date.replace(tzinfo=None)).days
+            # Add 2-day overlap to catch any emails that arrived during the last sync
+            effective_since_days = min(req.since_days, max(3, days_since + 2))
+
         results = await email_fetcher.process_emails(
             db=db,
             sources=req.sources,
             max_results=req.max_results,
-            since_days=req.since_days
+            since_days=effective_since_days
         )
         return {
             "success": True,
             "message": f"Processed {results['processed']} emails, found {results['new_subscriptions']} new subscriptions",
-            "results": results
+            "results": {**results, "since_days_used": effective_since_days}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email parsing failed: {str(e)}")

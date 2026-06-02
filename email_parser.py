@@ -107,6 +107,12 @@ PAYMENT_GATEWAY_NAMES = {
     'braintree', 'braintreegateway', 'fastspring', 'paddle',
     'chargebee', 'recurly', 'chargify', '2checkout', 'adyen',
     'mollie', 'klarna', 'worldpay', 'authorize.net',
+    # Czech/Slovak payment gateways and banks — never a subscription provider
+    'barion', 'gopay', 'comgate', 'csob', 'paygate',
+    'mbank', 'm-bank', 'airbank', 'air-bank',
+    'raiffeisen', 'raiffeisenbank', 'rb', 'unicredit',
+    'moneta', 'fio', 'fio banka', 'kb', 'csob',
+    'ceska sporitelna', 'česká spořitelna', 'sporitelna',
 }
 
 # Czech/Slovak words that are common false-positive subjects
@@ -136,12 +142,16 @@ PAYMENT_PROCESSORS = {
 }
 
 CZECH_BANKS = {
-    'airbank': r'air\s*bank',
-    'raiffeisen': r'raiffeisen|rb\s*bank',
-    'csob': r'čsob|csob',
-    'kb': r'komerční\s*banka',
-    'moneta': r'moneta',
-    'fio': r'fio\s*banka',
+    'airbank': r'air\s*bank|airbank\.cz',
+    'raiffeisen': r'raiffeisen|rb\s*bank|rb\.cz|raiffeisenbank',
+    'csob': r'čsob|csob|csob\.cz',
+    'kb': r'komerční\s*banka|kb\.cz',
+    'moneta': r'moneta|moneta\.cz',
+    'fio': r'fio\s*banka|fio\.cz',
+    'mbank': r'm[\-\s]?bank|mbank\.cz',
+    'unicredit': r'unicredit|unicreditbank\.cz',
+    'barion': r'barion',
+    'sporitelna': r'spořitelna|sporitelna|csas\.cz',
 }
 
 # ─── Keywords ────────────────────────────────────────────────────────────────
@@ -228,12 +238,17 @@ AMOUNT_PATTERNS = [
     r'(?<!\d)(?:\$|USD\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
     r'(?<!\d)(?:€|EUR\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
     r'(?<!\d)(?:£|GBP\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
-    # CZK: Kč 299,00  or  299,00 Kč  or  CZK 299
+    # Currency AFTER number (German/Czech locale): 15,99 EUR  19.00 €  299,00 Kč
+    r'(?<!\d)(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:EUR|€)(?!\w)',
+    r'(?<!\d)(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:USD|\$)(?!\w)',
+    r'(?<!\d)(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:GBP|£)(?!\w)',
+    # CZK: Kč 299,00  or  299,00 Kč  or  CZK 299  or  1.299,00 Kč (thousands sep)
     r'(?:Kč\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
-    r'(?<!\d)(\d{1,6}(?:[.,]\d{1,2})?)\s?Kč(?!\d)',
+    r'(?<!\d)(\d{1,6}(?:[.,]\d{1,2})?)\s?Kč(?!\w)',
     r'(?:CZK\s?)(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
+    r'(?<!\d)(\d{1,6}(?:[.,]\d{1,2})?)\s*CZK(?!\w)',
     # Explicit keyword context: "paid 15.99" / "total: 15.99" / "amount: 15.99"
-    r'(?:paid|amount|total|charged|billed)\s*[:\s]*(?:\$|€|£|Kč)?(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
+    r'(?:paid|amount|total|charged|billed|celkem|částka|cena)\s*[:\s]*(?:\$|€|£|Kč)?(\d{1,6}(?:[.,]\d{1,2})?)(?!\d)',
 ]
 
 CURRENCY_MAP = {
