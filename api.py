@@ -138,7 +138,7 @@ async def shutdown():
 @app.get("/api/subscriptions", response_model=PaginatedSubscriptions)
 async def get_subscriptions(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
+    page_size: int = Query(20, ge=1, le=500),
     category: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     billing_cycle: Optional[str] = Query(None),
