@@ -163,18 +163,15 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         from sqlalchemy import text
-        # Fix financial_records.id type: old schema created it as INTEGER, must be VARCHAR for UUIDs
+        # Fix financial_records.id: old schema INTEGER, must be VARCHAR for UUIDs.
+        # Use ALTER COLUMN with explicit cast (PostgreSQL); silently skip on SQLite.
         try:
-            result = await conn.execute(text(
-                "SELECT data_type FROM information_schema.columns "
-                "WHERE table_name='financial_records' AND column_name='id'"
+            await conn.execute(text(
+                "ALTER TABLE financial_records "
+                "ALTER COLUMN id TYPE VARCHAR(64) USING id::VARCHAR(64)"
             ))
-            row = result.fetchone()
-            if row and row[0] in ('integer', 'bigint'):
-                await conn.execute(text("DROP TABLE IF EXISTS financial_records"))
-                await conn.run_sync(Base.metadata.create_all)
         except Exception:
-            pass
+            pass  # Already correct type, or SQLite (no-op)
 
         # Add columns that may be missing from older schema deployments
         migrations = [
