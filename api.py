@@ -27,6 +27,7 @@ from database import (
 )
 
 from email_fetcher import EmailFetcher
+from fx import to_usd, format_money, format_compact
 
 # Global fetcher instance
 email_fetcher = EmailFetcher()
