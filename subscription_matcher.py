@@ -217,16 +217,17 @@ class SubscriptionMatcher:
                 matched_sub_ids.add(sub.id)
                 last_date = max(r.date for r in recs if r.date)
                 total     = sum(abs(r.amount) for r in recs)
-                sub.confirmed_by_wallet  = 1  # INTEGER column in postgres
-                # Keep as datetime object (TIMESTAMP column - do not stringify)
-                if hasattr(last_date, 'date'):
-                    sub.last_payment_date = last_date  # already datetime
-                else:
-                    from datetime import datetime
-                    sub.last_payment_date = datetime.fromisoformat(str(last_date)[:10])
-                # actual_cost = most recent single payment amount
-                most_recent = sorted(recs, key=lambda r: r.date or datetime.min)[-1]
-                sub.actual_cost = round(abs(most_recent.amount or 0), 2)
+                # Use raw SQL update to avoid SQLAlchemy casting 1 -> BOOLEAN
+                # (the PG column is INTEGER but the ORM model type cache says Boolean)
+                from sqlalchemy import text as _text
+                from datetime import datetime as _dt
+                _last = last_date if hasattr(last_date, 'date') else _dt.fromisoformat(str(last_date)[:10])
+                _recent = sorted(recs, key=lambda r: r.date or _dt.min)[-1]
+                _cost = round(abs(_recent.amount or 0), 2)
+                await db.execute(
+                    _text("UPDATE subscriptions SET confirmed_by_wallet=1, last_payment_date=:lp, actual_cost=:ac, updated_at=:ua WHERE id=:id"),
+                    {"lp": _last, "ac": _cost, "ua": _dt.utcnow(), "id": sub.id}
+                )
                 # Don't change approval_status here — that's user's call
 
             await db.commit()
