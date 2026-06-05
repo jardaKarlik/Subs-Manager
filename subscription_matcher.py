@@ -251,6 +251,9 @@ class SubscriptionMatcher:
                 # coerce a 'YYYY-MM-DD' string into a TIMESTAMP param. Bypass
                 # the ORM and pass the date as a string literal (same approach
                 # as commit 41e9570).
+                # NOTE: subscriptions iterated here were pre-filtered to
+                # SUBSCRIPTION_CATEGORIES via the _is_subscription_record()
+                # check on each FinancialRecord above.
                 await db.execute(
                     text(
                         f"UPDATE subscriptions SET "
