@@ -49,7 +49,10 @@ STRIP_WORDS = {
 PAYEE_ALIASES = {
     'spotify':                 'Spotify',
     'netflix':                 'Netflix',
+    # Both payees from Anthropic billing merge into one subscription row
     'anthropic':               'Anthropic',
+    'claude.ai':               'Anthropic',
+    'claude ai':               'Anthropic',
     'openai':                  'OpenAI',
     'github':                  'GitHub',
     'microsoft':               'Microsoft',
@@ -64,7 +67,7 @@ PAYEE_ALIASES = {
     'railway':                 'Railway',
     'beatport':                'Beatport',
     'bandcamp':                'Bandcamp',
-    'native':            'Native Instruments',
+    'native':                  'Native Instruments',
     'native instruments':      'Native Instruments',
     'patreon':                 'Patreon',
     'cline':                   'Cline',
@@ -73,7 +76,6 @@ PAYEE_ALIASES = {
     'mixcloud':                'Mixcloud',
     'soundcloud':              'SoundCloud',
     'discogs':                 'Discogs',
-    'patreon':                 'Patreon',
     'vinted':                  'Vinted',
     'saily':                   'Saily',
     'pixiv':                   'Pixiv',

@@ -109,10 +109,20 @@ class PaginatedSubscriptions(BaseModel):
 
 class StatsResponse(BaseModel):
     total_subscriptions: int
+    recurring_count: int = 0
+    one_time_count: int = 0
     total_monthly_cost: float
     total_yearly_cost: float
     by_category: dict
     by_status: dict
+    currency: str = "CZK"
+    data_as_of: Optional[str] = None
+    confirmed_count: int = 0
+    unconfirmed_count: int = 0
+    actual_monthly_czk: float = 0.0
+    rolling_avg_3m_czk: float = 0.0
+    wallet_record_count: int = 0
+    wallet_sync_last: Optional[str] = None
 
 
 # ============================================================================
@@ -299,60 +309,59 @@ async def delete_subscription(subscription_id: int, db: AsyncSession = Depends(g
 
 @app.get("/api/stats", response_model=StatsResponse)
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    """Get comprehensive subscription statistics including wallet-enriched data."""
+    """Get comprehensive subscription statistics. All monetary values normalised to CZK."""
     from database import FinancialRecord
+    from datetime import timedelta
+
+    # ── FX to CZK (approximate mid-market) ──────────────────────────────────
+    FX_TO_CZK = {"CZK": 1.0, "EUR": 25.0, "USD": 23.0, "GBP": 29.0}
+
+    def to_czk(amount: float, currency: str) -> float:
+        return amount * FX_TO_CZK.get((currency or "CZK").upper(), 23.0)
+
+    def monthly_czk(s: Subscription) -> float:
+        """Return estimated monthly cost in CZK for one subscription row."""
+        cost = s.cost or 0.0
+        if s.billing_cycle == "yearly":
+            cost = cost / 12
+        elif s.billing_cycle == "weekly":
+            cost = cost * 4.33
+        return to_czk(cost, s.currency)
+
     result = await db.execute(select(Subscription))
     subs = result.scalars().all()
 
-    # Monthly-equivalent cost per sub, in the sub's own currency.
-    # one-time purchases are NOT counted as monthly (they're a one-off hit).
-    # daily is treated as a small recurring charge.
-    def _monthly_equiv(s):
-        cost = s.cost or 0
-        if s.billing_cycle == "yearly":  return cost / 12
-        if s.billing_cycle == "weekly":  return cost * 52 / 12
-        if s.billing_cycle == "daily":   return cost * 30
-        if s.billing_cycle == "one-time":return 0  # excluded from monthly
-        return cost  # monthly or unknown
-
-    total_monthly = 0.0
-    total_yearly = 0.0
-    by_category = {}
-    by_status = {}
-    by_currency = {}   # {"CZK": {"count": N, "monthly": X}, "USD": {...}, ...}
-    total_monthly_usd = 0.0
+    total_monthly_czk = 0.0
+    by_category: dict = {}
+    by_status: dict = {}
     confirmed_count = 0
     recurring_count = 0  # excludes one-time
 
     for s in subs:
-        cost = s.cost or 0
-        cur = (s.currency or "USD").upper()
+        mo_czk = monthly_czk(s)
 
-        by_category[s.category] = by_category.get(s.category, {"count": 0, "monthly_cost": 0})
+        by_category.setdefault(s.category, {"count": 0, "monthly_cost": 0.0})
         by_category[s.category]["count"] += 1
+        by_category[s.category]["monthly_cost"] = round(
+            by_category[s.category]["monthly_cost"] + mo_czk, 2
+        )
         by_status[s.status] = by_status.get(s.status, 0) + 1
-
-        mo = _monthly_equiv(s)
-        yr = mo * 12
-
-        by_category[s.category]["monthly_cost"] += mo
-        total_monthly += mo
-        total_yearly += yr
-        total_monthly_usd += to_usd(mo, cur)
-
-        by_currency[cur] = by_currency.get(cur, {"count": 0, "monthly": 0.0})
-        by_currency[cur]["count"] += 1
-        by_currency[cur]["monthly"] += mo
+        total_monthly_czk += mo_czk
 
         if s.billing_cycle != "one-time":
             recurring_count += 1
         if s.confirmed_by_wallet:
             confirmed_count += 1
 
-    # Wallet stats
+    total_monthly_czk = round(total_monthly_czk, 2)
+    total_yearly_czk  = round(total_monthly_czk * 12, 2)
+
+    # ── Wallet stats ─────────────────────────────────────────────────────────
     wallet_record_count = 0
-    wallet_sync_last = None
-    actual_monthly_spend = 0.0
+    wallet_sync_last    = None
+    actual_monthly_czk  = 0.0
+    rolling_avg_czk     = 0.0
+
     try:
         wcount = await db.execute(select(func.count(FinancialRecord.id)))
         wallet_record_count = wcount.scalar() or 0
@@ -360,39 +369,49 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         wlast = await db.execute(select(func.max(FinancialRecord.fetched_at)))
         wallet_sync_last = wlast.scalar()
 
-        # Actual monthly spend: sum of matched expense records in last 30 days
-        from datetime import timedelta
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        wspend = await db.execute(
+        now = datetime.utcnow()
+
+        # Current calendar month (day 1 to now)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        wspend_month = await db.execute(
             select(func.sum(FinancialRecord.amount)).where(
-                FinancialRecord.matched_subscription_id != None,  # noqa: E711
                 FinancialRecord.record_type == "expense",
-                FinancialRecord.date >= thirty_days_ago,
+                FinancialRecord.date >= month_start,
             )
         )
-        raw_spend = wspend.scalar() or 0.0
-        actual_monthly_spend = round(abs(raw_spend), 2)
+        actual_monthly_czk = round(abs(wspend_month.scalar() or 0.0), 2)
+
+        # 3-month rolling average: last 90 days divided by 3
+        ninety_days_ago = now - timedelta(days=90)
+        wspend_90 = await db.execute(
+            select(func.sum(FinancialRecord.amount)).where(
+                FinancialRecord.record_type == "expense",
+                FinancialRecord.date >= ninety_days_ago,
+            )
+        )
+        rolling_avg_czk = round(abs(wspend_90.scalar() or 0.0) / 3, 2)
+
     except Exception:
         pass
 
     return {
-        "total_subscriptions": len(subs),
-        "recurring_count": recurring_count,
-        "one_time_count": len(subs) - recurring_count,
-        "total_monthly_cost": round(total_monthly, 2),  # mixed-currency (for reference)
-        "total_monthly_usd": round(total_monthly_usd, 2),  # normalized to USD
-        "total_yearly_cost": round(total_yearly, 2),
-        "by_category": by_category,
-        "by_status": by_status,
-        "by_currency": by_currency,
-        "base_currency": "USD",
-        "data_as_of": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "total_subscriptions":  len(subs),
+        "recurring_count":      recurring_count,
+        "one_time_count":       len(subs) - recurring_count,
+        "total_monthly_cost":   total_monthly_czk,
+        "total_yearly_cost":    total_yearly_czk,
+        "by_category":          by_category,
+        "by_status":            by_status,
+        "currency":             "CZK",
+        "data_as_of":           datetime.utcnow().isoformat(timespec="seconds") + "Z",
         # Wallet-enriched fields
-        "confirmed_count": confirmed_count,
-        "unconfirmed_count": len(subs) - confirmed_count,
-        "actual_monthly_spend": actual_monthly_spend,
-        "wallet_record_count": wallet_record_count,
-        "wallet_sync_last": wallet_sync_last.isoformat() if wallet_sync_last else None,
+        "confirmed_count":      confirmed_count,
+        "unconfirmed_count":    len(subs) - confirmed_count,
+        "actual_monthly_czk":   actual_monthly_czk,
+        "rolling_avg_3m_czk":   rolling_avg_czk,
+        "wallet_record_count":  wallet_record_count,
+        "wallet_sync_last":     wallet_sync_last if isinstance(wallet_sync_last, str)
+                                else (wallet_sync_last.isoformat() if wallet_sync_last else None),
     }
 
 

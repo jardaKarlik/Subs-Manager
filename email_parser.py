@@ -233,6 +233,9 @@ BILLING_CYCLE_PATTERNS = {
 }
 
 
+MAX_COST = {"CZK": 50000, "EUR": 2000, "USD": 2000, "GBP": 2000}
+
+
 class EmailClassifier:
     """Multi-layer subscription email classifier with confidence scoring."""
 
@@ -516,37 +519,48 @@ class EmailClassifier:
         return queries
 
     def _extract_amount(self, text: str) -> Tuple[float, str]:
-        """Extract monetary amount and currency from text."""
-        amount_matches = []
-        # (placeholder removed)
+        """Extract the most plausible monetary amount with currency context.
 
-        # (placeholder removed)
+        Strategy: score candidates by proximity to billing keywords; prefer
+        largest amount as tiebreaker so reference numbers lose to actual costs.
+        """
+        BILLING_CONTEXT = re.compile(
+            r'\b(paid|amount|total|charged|billed|payment|invoice|receipt|'
+            r'celkem|částka|cena|faktura|platba|úhrada)\b',
+            re.IGNORECASE,
+        )
+
+        candidates = []
         for pattern in self.compiled_patterns['amount']:
-            for match in pattern.finditer(text):
-                amount_str = match.group(1)
-                # Clean and parse
-                amount_str = amount_str.replace(' ', '').replace(',', '.')
+            for m in pattern.finditer(text):
+                raw = m.group(1).replace(' ', '').replace(',', '.')
                 try:
-                    amount = float(amount_str)
+                    amount = float(raw)
                 except ValueError:
                     continue
+                if amount <= 0:
+                    continue
+                ctx      = text[max(0, m.start()-20):m.end()+10]
+                currency = self._detect_currency(ctx)
+                cap      = MAX_COST.get(currency, 5000)
+                if amount > cap:
+                    continue
 
-                # Determine currency from context
-                start = max(0, match.start() - 10)
-                context = text[start:match.end()]
-                currency = self._detect_currency(context)
+                window_start = max(0, m.start() - 150)
+                window_end   = min(len(text), m.end() + 150)
+                window       = text[window_start:window_end]
+                bm = BILLING_CONTEXT.search(window)
+                billing_dist = abs(m.start() - window_start - (bm.start() if bm else 9999))
+                has_billing  = 1 if bm else 0
 
-                # Take first reasonable amount by position, not largest
-                amount_matches.append((match.start(), amount, currency))
-                # (line merged into amount_matches above)
-                # (line merged into amount_matches above)
+                candidates.append((has_billing, billing_dist, amount, currency, m.start()))
 
-        # Return first reasonable amount by position (not largest)
-        amount_matches.sort(key=lambda x: x[0])
-        for _, amount, currency in amount_matches:
-            if amount > 0.01:
-                return amount, currency
-        return 0.0, 'USD'
+        if not candidates:
+            return 0.0, 'USD'
+
+        candidates.sort(key=lambda x: (-x[0], x[1], -x[2]))
+        _, _, amount, currency, _ = candidates[0]
+        return amount, currency
 
     def _detect_currency(self, context: str) -> str:
         """Detect currency from text context."""
