@@ -371,22 +371,31 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
         now = datetime.utcnow()
 
-        # Current calendar month (day 1 to now)
+        # Subscription-relevant wallet categories (mirrors SUBSCRIPTION_CATEGORIES
+        # in subscription_matcher.py — keep in sync)
+        sub_cats = [
+            'Software, apps, games', 'Tv, streaming',
+            'Books, audio, subscription', 'Internet', 'Music', 'Hobbies',
+        ]
+
+        # Current calendar month (day 1 to now), subscription categories only
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         wspend_month = await db.execute(
             select(func.sum(FinancialRecord.amount)).where(
                 FinancialRecord.record_type == "expense",
                 FinancialRecord.date >= month_start,
+                FinancialRecord.category_name.in_(sub_cats),
             )
         )
         actual_monthly_czk = round(abs(wspend_month.scalar() or 0.0), 2)
 
-        # 3-month rolling average: last 90 days divided by 3
+        # 3-month rolling average: last 90 days divided by 3, subscription categories only
         ninety_days_ago = now - timedelta(days=90)
         wspend_90 = await db.execute(
             select(func.sum(FinancialRecord.amount)).where(
                 FinancialRecord.record_type == "expense",
                 FinancialRecord.date >= ninety_days_ago,
+                FinancialRecord.category_name.in_(sub_cats),
             )
         )
         rolling_avg_czk = round(abs(wspend_90.scalar() or 0.0) / 3, 2)
