@@ -24,7 +24,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import AsyncSessionLocal, Subscription, FinancialRecord
@@ -245,9 +245,21 @@ class SubscriptionMatcher:
                 lp_str    = (last_date.strftime('%Y-%m-%d')
                              if hasattr(last_date, 'strftime')
                              else str(last_date)[:10])
-                sub.confirmed_by_wallet = 1
-                sub.last_payment_date   = lp_str
-                sub.actual_cost         = flat_fee
+                # Use raw SQL UPDATE: the SQLAlchemy model declares
+                # last_payment_date as TIMESTAMP WITHOUT TIME ZONE, but the
+                # DB column is character varying and asyncpg will not auto-
+                # coerce a 'YYYY-MM-DD' string into a TIMESTAMP param. Bypass
+                # the ORM and pass the date as a string literal (same approach
+                # as commit 41e9570).
+                await db.execute(
+                    text(
+                        f"UPDATE subscriptions SET "
+                        f"confirmed_by_wallet = 1, "
+                        f"last_payment_date = '{lp_str}', "
+                        f"actual_cost = {float(flat_fee)} "
+                        f"WHERE id = {int(sub.id)}"
+                    )
+                )
 
             await db.commit()
 
