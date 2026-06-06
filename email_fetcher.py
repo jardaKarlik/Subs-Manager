@@ -202,39 +202,61 @@ class EmailFetcher:
 
     async def fetch_gmail(self, max_results: int = 1000, since_days: int = 365) -> List[Dict]:
         """
-        Backward compatible fetch_gmail. 
-        Note: The main streaming logic is now in _stream_fetch_and_process_gmail.
+        Fetch Gmail emails using targeted Group A (payment) and Group B (account) queries.
+        Each email is tagged with its search_group for the classifier.
         """
         emails = []
         gmail_account = os.getenv("GMAIL_ACCOUNT_ID")
         if not gmail_account:
             return []
 
-        query = f"after:{self._format_gmail_date(since_days)}"
+        from email_parser import EmailClassifier
+        classifier = EmailClassifier()
+        queries = classifier.build_search_queries(since_days=since_days)
+
+        # Run Group A queries first, then Group B
+        search_groups = [("A", queries["group_a"]), ("B", queries["group_b"])]
+
         composio_client = self._get_composio()
-        if composio_client:
-            try:
+        if not composio_client:
+            return emails
+
+        seen_ids = set()
+
+        for group_label, group_queries in search_groups:
+            for query in group_queries:
                 fetched_count = 0
                 page_token = None
-                while fetched_count < max_results:
+                while fetched_count < max_results // 2:  # Cap per query
                     batch_size = min(20, max_results - fetched_count)
                     arguments = {"query": query, "max_results": batch_size, "include_payload": True}
-                    if page_token: arguments["page_token"] = page_token
-                    result = composio_client.tools.execute(slug="GMAIL_FETCH_EMAILS", arguments=arguments, connected_account_id=gmail_account, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
-                    data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
-                    data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
-                    batch_emails = self._parse_gmail_v2_result({"data": data})
-                    if not batch_emails: break
-                    emails.extend(batch_emails)
-                    fetched_count += len(batch_emails)
-                    page_token = data.get("nextPageToken")
-                    if not page_token: break
-                    import asyncio
-                    await asyncio.sleep(0.5)
-                return emails
-            except Exception as e:
-                print(f"Gmail [v2] error: {e}")
-
+                    if page_token:
+                        arguments["page_token"] = page_token
+                    try:
+                        result = composio_client.tools.execute(
+                            slug="GMAIL_FETCH_EMAILS", arguments=arguments,
+                            connected_account_id=gmail_account,
+                            user_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                            dangerously_skip_version_check=True)
+                        data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
+                        data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
+                        batch_emails = self._parse_gmail_v2_result({"data": data})
+                        if not batch_emails:
+                            break
+                        for em in batch_emails:
+                            if em["message_id"] not in seen_ids:
+                                em["search_group"] = group_label
+                                seen_ids.add(em["message_id"])
+                                emails.append(em)
+                        fetched_count += len(batch_emails)
+                        page_token = data.get("nextPageToken")
+                        if not page_token:
+                            break
+                        import asyncio
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        print(f"Gmail query error [{group_label}]: {e}")
+                        break
         return emails
 
     def _parse_gmail_v2_result(self, result: dict) -> List[Dict]:
@@ -424,7 +446,9 @@ class EmailFetcher:
                 continue
 
             try:
-                classification = self.classifier.classify(email["subject"], email["sender"], email["body"])
+                classification = self.classifier.classify(
+                    email["subject"], email["sender"], email["body"],
+                    search_group=email.get("search_group"))
                 # Record as processed (SQLite-safe; dedup already confirmed above)
                 db.add(ProcessedEmail(message_id=email["_unique_id"], source=email["source"]))
 
@@ -484,34 +508,58 @@ class EmailFetcher:
             raise RuntimeError(f"Database commit failed for batch: {e}") from e
 
     async def _stream_fetch_and_process_gmail(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
-        """Fetch Gmail in batches and process immediately."""
+        """Fetch Gmail in batches using Group A/B queries and process immediately."""
+        from email_parser import EmailClassifier
+        classifier = EmailClassifier()
+        queries = classifier.build_search_queries(since_days=since_days)
+        search_groups = [("A", queries["group_a"]), ("B", queries["group_b"])]
+
         gmail_account = os.getenv("GMAIL_ACCOUNT_ID")
         composio_client = self._get_composio()
         if not gmail_account or not composio_client: return
-        query = f"after:{self._format_gmail_date(since_days)}"
-        fetched_count, page_token, batch_num = 0, None, 0
-        while fetched_count < max_results:
-            batch_size = min(20, max_results - fetched_count)
-            arguments = {"query": query, "max_results": batch_size, "include_payload": True}
-            if page_token: arguments["page_token"] = page_token
-            try:
-                result = composio_client.tools.execute(slug="GMAIL_FETCH_EMAILS", arguments=arguments, user_id=os.getenv("COMPOSIO_USER_ID", "default"), dangerously_skip_version_check=True)
-                data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
-                data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
-                batch_emails = self._parse_gmail_v2_result({"data": data})
-                if not batch_emails: break
-                batch_num += 1
-                fetched_count += len(batch_emails)
-                await self._process_email_batch(db, batch_emails, results)
-                print(f"  Gmail batch #{batch_num}: {len(batch_emails)} fetched -> total processed: {results['processed']}")
-                page_token = data.get("nextPageToken")
-                if not page_token: break
-                import asyncio
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                print(f"Gmail [v2] batch error: {e}")
-                break
-        results["sources"]["gmail"] = fetched_count
+
+        seen_ids = set()
+        total_fetched = 0
+        batch_num = 0
+
+        for group_label, group_queries in search_groups:
+            for query in group_queries:
+                fetched_count = 0
+                page_token = None
+                while fetched_count < max_results // 2:
+                    batch_size = min(20, max_results - fetched_count)
+                    arguments = {"query": query, "max_results": batch_size, "include_payload": True}
+                    if page_token: arguments["page_token"] = page_token
+                    try:
+                        result = composio_client.tools.execute(
+                            slug="GMAIL_FETCH_EMAILS", arguments=arguments,
+                            user_id=os.getenv("COMPOSIO_USER_ID", "default"),
+                            dangerously_skip_version_check=True)
+                        data_obj = getattr(result, 'data', result) if not isinstance(result, dict) else result
+                        data = data_obj.get("data") or data_obj if isinstance(data_obj, dict) else {}
+                        batch_emails = self._parse_gmail_v2_result({"data": data})
+                        if not batch_emails: break
+                        # Tag and deduplicate across groups
+                        unique_batch = []
+                        for em in batch_emails:
+                            if em["message_id"] not in seen_ids:
+                                em["search_group"] = group_label
+                                seen_ids.add(em["message_id"])
+                                unique_batch.append(em)
+                        if not unique_batch: break
+                        batch_num += 1
+                        fetched_count += len(unique_batch)
+                        total_fetched += len(unique_batch)
+                        await self._process_email_batch(db, unique_batch, results)
+                        print(f"  Gmail [{group_label}] #{batch_num}: {len(unique_batch)} processed -> total: {results['processed']}")
+                        page_token = data.get("nextPageToken")
+                        if not page_token: break
+                        import asyncio
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        print(f"Gmail [{group_label}] batch error: {e}")
+                        break
+        results["sources"]["gmail"] = total_fetched
 
     async def _stream_fetch_and_process_outlook(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
         """Fetch Outlook in batches and process immediately."""

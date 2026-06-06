@@ -1236,6 +1236,108 @@ async def run_job_now(job_id: str):
 
 
 # ============================================================================
+# New Endpoints: Monthly Trend & Service Costs
+# ============================================================================
+
+@app.get("/api/monthly-trend")
+async def get_monthly_trend(
+    months: int = Query(3, ge=1, le=12),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Monthly spend trend by category for line chart.
+    Top 8 categories are returned for frontend display.
+    """
+    from database import SubscriptionEvent
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+
+    cutoff = datetime.utcnow() - timedelta(days=months * 31)
+    rows = await db.execute(
+        select(
+            func.strftime("%Y-%m", SubscriptionEvent.event_date).label("month"),
+            SubscriptionEvent.category,
+            func.sum(SubscriptionEvent.amount).label("total"),
+            func.count(SubscriptionEvent.id).label("count"),
+        )
+        .where(SubscriptionEvent.event_date >= cutoff)
+        .group_by("month", SubscriptionEvent.category)
+        .order_by(func.strftime("%Y-%m", SubscriptionEvent.event_date).desc())
+    )
+    data = rows.all()
+
+    # Build per-month totals
+    month_totals = {}
+    category_totals = {}
+    for row in data:
+        month = row.month
+        cat = row.category or "other"
+        total = abs(row.total or 0)
+        month_totals.setdefault(month, {})
+        month_totals[month][cat] = month_totals[month].get(cat, 0) + total
+        category_totals[cat] = category_totals.get(cat, 0) + total
+
+    # Get top 8 categories by total spend
+    top_cats = sorted(category_totals, key=category_totals.get, reverse=True)[:8]
+
+    # Build structured response
+    months_list = sorted(month_totals.keys(), reverse=True)
+    by_category = {}
+    for cat in top_cats:
+        by_category[cat] = {}
+        for m in months_list:
+            by_category[cat][m] = round(month_totals[m].get(cat, 0), 2)
+
+    total_per_month = {}
+    for m in months_list:
+        total_per_month[m] = round(sum(month_totals[m].values()), 2)
+
+    return {
+        "months": months_list,
+        "total_per_month": total_per_month,
+        "by_category": by_category,
+        "top_categories": top_cats,
+    }
+
+
+@app.get("/api/service-costs/{subscription_id}")
+async def get_service_costs(
+    subscription_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get cumulative cost data for a single subscription."""
+    from database import ServiceCost
+    result = await db.execute(
+        select(ServiceCost).where(ServiceCost.subscription_id == subscription_id)
+    )
+    cost = result.scalar_one_or_none()
+    if not cost:
+        return {"subscription_id": subscription_id, "total_spent": 0, "last_3_months_total": 0}
+    return cost.to_dict()
+
+
+@app.get("/api/sync-status")
+async def get_sync_status(db: AsyncSession = Depends(get_db)):
+    """Get the last sync status for all email sources."""
+    from database import SyncMetadata
+    result = await db.execute(
+        select(SyncMetadata).order_by(SyncMetadata.last_sync_at.desc()).limit(10)
+    )
+    records = result.scalars().all()
+    return {
+        "syncs": [
+            {
+                "source": r.source,
+                "last_sync_at": r.last_sync_at.isoformat() if r.last_sync_at else None,
+                "emails_processed": r.emails_processed,
+                "subscriptions_found": r.subscriptions_found,
+                "status": r.status,
+                "duration_seconds": r.duration_seconds,
+            }
+            for r in records
+        ]
+    }
+# ============================================================================
 # Mount Frontend Static Files (AFTER all API routes to avoid route capture)
 # Prefer frontend/ (simple UI with wallet features), fall back to glass dist.
 # ============================================================================

@@ -274,7 +274,81 @@ class SubscriptionMatcher:
             'confirmed_subs':    len(matched_sub_ids),
         }
 
-    async def infer_billing_cycles(self) -> dict:
+    async def detect_payment_type(self, subscription_id: int) -> dict:
+        """
+        Determine if a subscription is monthly or ad-hoc based on wallet payment frequency.
+        
+        Primary signal: recurrence of the same payment value in wallet records.
+        If the same amount appears in >=50% of payments AND average gap is 25-35 days → monthly.
+        Otherwise → adhoc. At this filtering level, there are no other variants.
+        """
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import select, func
+            rec_result = await db.execute(
+                select(FinancialRecord).where(
+                    FinancialRecord.matched_subscription_id == subscription_id,
+                    FinancialRecord.record_type == 'expense',
+                ).order_by(FinancialRecord.date)
+            )
+            records = [r for r in rec_result.scalars().all() if not _is_paypal_record(r)]
+
+        if len(records) < 2:
+            return {"payment_type": "unknown", "reason": "insufficient_data", "records": len(records)}
+
+        from collections import Counter
+        amounts = [round(abs(r.amount), 2) for r in records]
+        most_common_amount, frequency = Counter(amounts).most_common(1)[0]
+        recurrence_ratio = frequency / len(amounts)
+
+        dates = sorted([r.date for r in records if r.date])
+        if len(dates) >= 2:
+            gaps = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
+            avg_gap = sum(gaps) / len(gaps)
+
+            if recurrence_ratio >= 0.5 and 25 <= avg_gap <= 35:
+                payment_type = "monthly"
+                reason = f"same_amount_ratio={recurrence_ratio:.2f}, avg_gap={avg_gap:.0f}d"
+            elif recurrence_ratio >= 0.5 and 350 <= avg_gap <= 380:
+                payment_type = "yearly"
+                reason = f"same_amount_ratio={recurrence_ratio:.2f}, avg_gap={avg_gap:.0f}d"
+            else:
+                payment_type = "adhoc"
+                reason = f"recurrence_ratio={recurrence_ratio:.2f}, avg_gap={avg_gap:.0f}d"
+        else:
+            payment_type = "unknown"
+            reason = "single_date_only"
+
+        # Update the subscription's billing_cycle if different
+        async with AsyncSessionLocal() as db:
+            sub = await db.execute(select(Subscription).where(Subscription.id == subscription_id))
+            sub = sub.scalar_one_or_none()
+            if sub and payment_type != "unknown" and payment_type != sub.billing_cycle:
+                sub.billing_cycle = payment_type
+                sub.updated_at = datetime.utcnow()
+                await db.commit()
+
+        return {
+            "subscription_id": subscription_id,
+            "payment_type": payment_type,
+            "reason": reason,
+            "flat_fee": most_common_amount,
+            "frequency": frequency,
+            "total_payments": len(records),
+            "avg_gap_days": round(avg_gap, 1) if len(dates) >= 2 else None,
+        }
+
+    async def detect_all_payment_types(self) -> dict:
+        """Run payment type detection for all wallet-confirmed subscriptions."""
+        updated = 0
+        async with AsyncSessionLocal() as db:
+            subs = await db.execute(
+                select(Subscription).where(Subscription.confirmed_by_wallet == 1)
+            )
+            for sub in subs.scalars().all():
+                result = await self.detect_payment_type(sub.id)
+                if result["payment_type"] != "unknown":
+                    updated += 1
+        return {"updated": updated}
         """
         For matched subscriptions, infer billing cycle from payment frequency.
         """

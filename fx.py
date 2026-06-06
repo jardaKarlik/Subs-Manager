@@ -69,3 +69,28 @@ def format_compact(amount: float) -> str:
     if a >= 1_000:
         return f"{sign}${a/1_000:.1f}K"
     return f"{sign}${a:.2f}"
+
+# ── CZK-centric rates (for local display) ───────────────────
+
+def to_czk(amount: float, currency: str) -> float:
+    """Convert an amount in any supported currency to CZK."""
+    if amount is None:
+        return 0.0
+    rate = RATES_TO_CZK.get((currency or "USD").upper(), 23.0)
+    return float(amount) * rate
+
+RATES_TO_CZK = {
+    "CZK": 1.0,
+    "USD": 23.0,
+    "EUR": 25.0,
+    "GBP": 29.0,
+    "PLN": 5.5,
+    "CHF": 25.5,
+    "CAD": 16.5,
+    "AUD": 15.0,
+    "JPY": 0.15,
+    "SEK": 2.1,
+    "NOK": 2.15,
+    "DKK": 3.35,
+    "HUF": 0.064,
+}

@@ -189,6 +189,69 @@ class SubscriptionEvent(Base):
         }
 
 
+class ServiceCost(Base):
+    """Per-service cumulative cost tracking with 3-month rolling sums."""
+    __tablename__ = "service_costs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    subscription_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    total_spent: Mapped[float] = mapped_column(Float, default=0.0)
+    month_1_amount: Mapped[float] = mapped_column(Float, default=0.0)  # -2 months
+    month_2_amount: Mapped[float] = mapped_column(Float, default=0.0)  # -1 month
+    month_3_amount: Mapped[float] = mapped_column(Float, default=0.0)  # current month
+    last_3_months_total: Mapped[float] = mapped_column(Float, default=0.0)
+    currency: Mapped[str] = mapped_column(String(10), default="CZK")
+    last_updated: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "subscription_id": self.subscription_id,
+            "total_spent": self.total_spent,
+            "month_1": self.month_1_amount,
+            "month_2": self.month_2_amount,
+            "month_3": self.month_3_amount,
+            "last_3_months_total": self.last_3_months_total,
+            "currency": self.currency,
+            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+        }
+
+
+class SyncMetadata(Base):
+    """Track email sync runs for each source."""
+    __tablename__ = "sync_metadata"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    last_sync_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    emails_processed: Mapped[int] = mapped_column(Integer, default=0)
+    subscriptions_found: Mapped[int] = mapped_column(Integer, default=0)
+    last_message_id: Mapped[str] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="success")
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=True)
+    error_message: Mapped[str] = mapped_column(String(1000), nullable=True)
+
+
+class ProviderAlias(Base):
+    """Extensible table of provider aliases for name deduplication."""
+    __tablename__ = "provider_aliases"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    alias: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    canonical_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(100), default="other")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProviderIndustry(Base):
+    """Cached industry/category results from Google Places API."""
+    __tablename__ = "provider_industries"
+
+    provider_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    category: Mapped[str] = mapped_column(String(100), default="other")
+    last_resolved: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 async def init_db():
     """Initialize database - create all tables."""
     async with engine.begin() as conn:
