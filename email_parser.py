@@ -92,17 +92,21 @@ NEGATIVE_KEYWORDS = {
 
 BLOCKLIST_SERVICES = {
     'vase', 'vaše', 'apetitonline', 'superzoo', 'braintreegateway',
-    'fastspring',
+    'fastspring', 'saily',
     # e-commerce / marketplaces — not subscription services
     'ebay', 'ebay s', 'amazon', 'temu', 'aliexpress', 'shein',
     'datart', 'alza', 'mall', 'czc', 'notifikace', 'novinky',
     'booking', 'airbnb', 'g2a', 'vinted', 'bazos',
     'copygeneral', 'globus', 'europosters', 'zasilkovna',
     'ticketmaster', 'asfinag',
+    # payment processors — not subscriptions
+    'paypal', 'stripe', 'comgate', 'paddle', 'gocardless',
+    't-mobile', 'tmobile', 'o2', 'vodafone',
     # clearly wrong extractions
     'view', 'shareholders', 'nl', 'mg', 'www', 'hotmail',
     'sendmail01', 'info-flyingblue', 'koninklijke luchtvaa',
     'payitgov', 'chooseatlas', 'htallc', '2fast4buds',
+    'list', 'product', 'notifications', 'sendmail',
 }
 
 # ═════════════════════════════════════════════
@@ -364,7 +368,7 @@ CURRENCY_MAP = {
     'kč': 'CZK', 'czk': 'CZK', 'CZK': 'CZK',
 }
 
-MAX_COST = {"CZK": 50000, "EUR": 2000, "USD": 2000, "GBP": 2000}
+MAX_COST = {"CZK": 15000, "EUR": 500, "USD": 500, "GBP": 400}
 
 # ═════════════════════════════════════════════
 # PLAN DETECTION
@@ -591,6 +595,8 @@ class EmailClassifier:
                 "newsletter","invoice","billing","intl","txn"}
         if name.lower() in skip and len(parts) > 1:
             name = parts[1]
+        if len(name) <= 1:
+            return None
         return name.title()
 
     def _detect_variant(self, service_name, text_lower):
