@@ -169,7 +169,14 @@ NEGATIVE_KEYWORDS = [
     'unsubscribe', 'marketing', 'newsletter',
     'action required', 'verify your', 'confirm your email',
     'job alert', 'board snapshot', 'digest', 'weekly update',
+    'vase', 'vaše', 'apetitonline', 'superzoo', 'braintreegateway',
+    'fastspring', 'joom', 'saily',
 ]
+
+BLOCKLIST_SERVICES = {
+    'vase', 'vaše', 'apetitonline', 'superzoo', 'braintreegateway',
+    'fastspring',
+}
 
 MUSIC_PURCHASE_HINTS = [
     'download', 'track', 'release', 'label', 'wav', 'mp3', 'order', 'purchase',
@@ -405,6 +412,10 @@ class EmailClassifier:
         else:
             source_type = 'subscription_email'
 
+        if (service_name or '').lower().strip() in BLOCKLIST_SERVICES:
+            is_subscription = False
+            confidence = 0.0
+
         return {
             'is_subscription': is_subscription,
             'confidence': round(confidence, 2),
@@ -539,6 +550,8 @@ class EmailClassifier:
                 except ValueError:
                     continue
                 if amount <= 0:
+                    continue
+                if len(re.sub(r'\D', '', m.group(1))) > 8:
                     continue
                 ctx      = text[max(0, m.start()-20):m.end()+10]
                 currency = self._detect_currency(ctx)

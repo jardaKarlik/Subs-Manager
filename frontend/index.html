@@ -212,13 +212,15 @@ th{cursor:pointer;user-select:none}
               <th>PLAN</th>
               <th onclick="sortBy('category')">CAT</th>
               <th class="r" onclick="sortBy('cost')">CZK/MO</th>
+              <th class="r" onclick="sortBy('yearly_cost')">CZK/YR</th>
+              <th class="r">TOTAL</th>
               <th>USE</th>
               <th onclick="sortBy('start_date')">SINCE</th>
               <th onclick="sortBy('status')">STATUS</th>
             </tr>
           </thead>
           <tbody id="reg-tbody">
-            <tr class="state-row"><td colspan="13"><span class="spinner">⟳</span> LOADING…</td></tr>
+            <tr class="state-row"><td colspan="10"><span class="spinner">⟳</span> LOADING…</td></tr>
           </tbody>
         </table>
       </div>
@@ -547,7 +549,7 @@ function sortedSubs(arr) {
 function renderTable() {
   const tbody = document.getElementById('reg-tbody');
   const subs  = sortedSubs(filteredSubs());
-  if (!subs.length) { tbody.innerHTML='<tr class="state-row"><td colspan="13">NO RESULTS</td></tr>'; updateFooter([]); return; }
+  if (!subs.length) { tbody.innerHTML='<tr class="state-row"><td colspan="10">NO RESULTS</td></tr>'; updateFooter([]); return; }
 
   tbody.innerHTML = subs.map((s,i) => {
     const mo       = monthly(s);
@@ -572,6 +574,8 @@ function renderTable() {
       <td class="c-plan">${extractPlan(s.notes)||'—'}</td>
       <td class="c-cat" style="color:${catColor}">${catLabel}</td>
       <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}</td>
+      <td class="c-mo-sub">${Math.round(mo * 12)} CZK</td>
+      <td class="c-total-spent" style="text-align:right">${hasSpend ? Math.round(spend.total_spent) + ' CZK' : '—'}</td>
       <td class="c-use">${usageBar(s)}</td>
       <td class="c-since">${fmtSince(s.start_date)}</td>
       <td class="c-status">${dot}</td>
@@ -794,7 +798,7 @@ async function loadAll() {
     document.getElementById('bot-ready').textContent='READY_';
   } catch(err) {
     console.error(err);
-    document.getElementById('reg-tbody').innerHTML=`<tr class="state-row"><td colspan="13">⚠ API ERROR — ${err.message}</td></tr>`;
+    document.getElementById('reg-tbody').innerHTML=`<tr class="state-row"><td colspan="10">⚠ API ERROR — ${err.message}</td></tr>`;
     document.getElementById('status-dot').textContent='✗ OFFLINE';
     document.getElementById('status-dot').style.color='var(--orange)';
     document.getElementById('bot-ready').textContent='ERR_';
