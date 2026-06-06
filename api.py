@@ -1009,14 +1009,16 @@ async def wallet_spend(db: AsyncSession = Depends(get_db)):
     }
 
 
+_FX_TO_CZK = {"CZK": 1.0, "EUR": 25.0, "USD": 23.0, "GBP": 29.0}
+
+
 @app.get("/api/wallet-spend-map")
 async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
     """
-    Map of subscription_id -> spend data.
-    total_spent = SUM of all matched payment amounts (absolute values).
-    first_payment = oldest record date (shown in SINCE column).
-    last_payment  = most recent record date.
-    dates = list of YYYY-MM month strings for sparkline.
+    Map of subscription_id -> spend data derived from wallet financial_records.
+    total_czk       = SUM of all matched payments converted to CZK.
+    avg_monthly_czk = total_czk / number of distinct calendar months with payments.
+    dates           = list of YYYY-MM month strings for sparkline.
     """
     from database import FinancialRecord
     rows = await db.execute(
@@ -1029,28 +1031,35 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
         .where(FinancialRecord.matched_subscription_id != None)  # noqa: E711
         .order_by(FinancialRecord.matched_subscription_id, FinancialRecord.date)
     )
-    subs = {}
+    subs: dict = {}
     for r in rows.all():
         sid = r.matched_subscription_id
         if sid not in subs:
             subs[sid] = {
-                "total_spent": 0.0,
+                "total_czk": 0.0,
                 "payments": 0,
                 "first_payment": r.date.isoformat() if r.date else None,
                 "last_payment": None,
                 "currency": r.currency,
                 "dates": [],
+                "_by_month": {},
             }
-        amt = abs(r.amount or 0)
-        # Only count expense records (negative amounts = money out)
         if (r.amount or 0) < 0:
-            subs[sid]["total_spent"] += amt
+            amt = abs(r.amount)
+            fx = _FX_TO_CZK.get((r.currency or "CZK").upper(), 23.0)
+            czk = amt * fx
+            subs[sid]["total_czk"] += czk
             subs[sid]["payments"] += 1
+            month = r.date.isoformat()[:7] if r.date else None
+            if month:
+                subs[sid]["_by_month"][month] = subs[sid]["_by_month"].get(month, 0.0) + czk
         subs[sid]["last_payment"] = r.date.isoformat() if r.date else None
         subs[sid]["dates"].append(r.date.isoformat()[:7] if r.date else None)
-    # Round total_spent
     for v in subs.values():
-        v["total_spent"] = round(v["total_spent"], 2)
+        v["total_czk"] = round(v["total_czk"], 2)
+        monthly_vals = list(v["_by_month"].values())
+        v["avg_monthly_czk"] = round(sum(monthly_vals) / len(monthly_vals), 2) if monthly_vals else 0.0
+        del v["_by_month"]
     return {"map": subs}
 
 
@@ -1061,7 +1070,6 @@ async def match_wallet():
     matcher = SubscriptionMatcher()
     try:
         match_result = await matcher.match_all()
-        cycle_result = await matcher.infer_billing_cycles()
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1070,7 +1078,7 @@ async def match_wallet():
             status_code=500,
             content={"status": "error", "detail": str(e), "trace": traceback.format_exc().splitlines()[-5:]}
         )
-    return {"status": "ok", **match_result, **cycle_result}
+    return {"status": "ok", **match_result}
 
 
 @app.get("/api/wallet-candidates")

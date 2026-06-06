@@ -501,6 +501,9 @@ function toCZK(amount, currency) {
 }
 
 function monthly(sub) {
+  // Prefer real wallet payment data over parser-guessed cost
+  const spend = getWalletSpend(sub.id);
+  if (spend && spend.avg_monthly_czk > 0) return spend.avg_monthly_czk;
   if (!sub.billing_cycle || sub.billing_cycle === 'one-time') return 0;
   let c = sub.cost || 0;
   if (sub.billing_cycle === 'yearly')  c = c / 12;
@@ -580,7 +583,7 @@ function renderTable() {
       <td class="c-cat" style="color:${catColor}">${catLabel}</td>
       <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}</td>
       <td class="c-mo-sub">${Math.round(mo * 12)} CZK</td>
-      <td class="c-total-spent" style="text-align:right">${hasSpend ? Math.round(spend.total_spent) + ' CZK' : '—'}</td>
+      <td class="c-total-spent" style="text-align:right">${hasSpend ? Math.round(spend.total_czk) + ' CZK' : '—'}</td>
       <td class="c-use">${usageBar(s)}</td>
       <td class="c-since">${fmtSince(s.start_date)}</td>
       <td class="c-status">${dot}</td>
