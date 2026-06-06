@@ -43,16 +43,29 @@ SUBSCRIPTION_CATEGORIES = {
     'hobbies',
 }
 
-# Payee fragments that indicate a PayPal intermediary record — skip these
-PAYPAL_PAYEE_PATTERNS = [
+# Payee/account fragments that indicate a payment processor intermediary.
+# These records represent the payment method, not the merchant — skip them
+# to avoid attributing a Google Pay purchase to the "Google" subscription.
+PAYMENT_PROCESSOR_PAYEE_PATTERNS = [
+    # PayPal
     r'\bpaypal\b',
     r'\bpp\b',
     r'paypal\s*czk',
     r'paypal\s*(se|inc|ltd)',
+    # Google Pay / Google as payment processor
+    r'\bgoogle\s*pay\b',
+    r'\bgpay\b',
+    r'\bgoogle\s*payment',
 ]
-PAYPAL_ACCOUNT_PATTERNS = [
+PAYMENT_PROCESSOR_ACCOUNT_PATTERNS = [
     r'paypal',
+    r'google\s*pay',
+    r'gpay',
 ]
+
+# Keep old names as aliases so existing call sites still work
+PAYPAL_PAYEE_PATTERNS    = PAYMENT_PROCESSOR_PAYEE_PATTERNS
+PAYPAL_ACCOUNT_PATTERNS  = PAYMENT_PROCESSOR_ACCOUNT_PATTERNS
 
 # Words to strip from payee names before fuzzy matching
 STRIP_WORDS = {
@@ -110,17 +123,20 @@ def _is_subscription_record(record: FinancialRecord) -> bool:
     return cat in SUBSCRIPTION_CATEGORIES
 
 
-def _is_paypal_record(record: FinancialRecord) -> bool:
-    """Return True if this record is a PayPal intermediary (should be deduplicated)."""
+def _is_payment_processor_record(record: FinancialRecord) -> bool:
+    """Return True if this record is a payment processor intermediary (PayPal, Google Pay, etc.)."""
     payee = (record.payee or '').lower()
     account = (record.account_name or '').lower()
-    for pat in PAYPAL_PAYEE_PATTERNS:
+    for pat in PAYMENT_PROCESSOR_PAYEE_PATTERNS:
         if re.search(pat, payee, re.I):
             return True
-    for pat in PAYPAL_ACCOUNT_PATTERNS:
+    for pat in PAYMENT_PROCESSOR_ACCOUNT_PATTERNS:
         if re.search(pat, account, re.I):
             return True
     return False
+
+# Backwards-compatible alias
+_is_paypal_record = _is_payment_processor_record
 
 
 def _is_unmatchable_payee(payee: str) -> bool:
@@ -269,7 +285,7 @@ class SubscriptionMatcher:
         return {
             'matched':           matched,
             'skipped':           skipped,
-            'paypal_skipped':    paypal_skip,
+            'processor_skipped': paypal_skip,
             'category_filtered': filtered,
             'confirmed_subs':    len(matched_sub_ids),
         }
