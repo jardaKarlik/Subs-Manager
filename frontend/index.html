@@ -564,11 +564,11 @@ function renderTable() {
     const dot      = flagged ? '<span class="dot dot--warn"></span>FLAGGED' : '<span class="dot dot--ok"></span>ACTIVE';
     const spend = getWalletSpend(s.id);
     const hasSpend = spend && spend.payments > 0;
-    const totalSpent = hasSpend ? fmtMoney(spend.total_spent, spend.currency) : '—';
+    const totalSpent = hasSpend ? Math.round(spend.total_czk) + ' CZK' : '—';
     const lastDate = hasSpend ? (spend.last_payment || '').substring(0,10) : '—';
     // SINCE: use first wallet record date when available (most accurate), else start_date
     const sinceDate = hasSpend && spend.first_payment ? spend.first_payment.substring(0,7) : fmtSince(s.start_date);
-    const sparklineHtml = hasSpend ? renderSparkline(s.id, spend.dates, spend.total_spent) : usageBar(s);
+    const sparklineHtml = hasSpend ? renderSparkline(s.id, spend.dates, spend.total_czk) : usageBar(s);
     const _usd = toUsd(mo, s.currency);
     const _czk = s.currency === 'CZK' ? mo : (s.currency === 'USD' ? mo / 0.043 : 0);
     const _eur = s.currency === 'EUR' ? mo : 0;
