@@ -498,9 +498,11 @@ function toCZK(amount, currency) {
 }
 
 function monthly(sub) {
+  if (!sub.billing_cycle || sub.billing_cycle === 'one-time') return 0;
   let c = sub.cost || 0;
   if (sub.billing_cycle === 'yearly')  c = c / 12;
   if (sub.billing_cycle === 'weekly')  c = c * 4.33;
+  if (sub.billing_cycle === 'daily')   c = c * 30;
   return toCZK(c, sub.currency);
 }
 
