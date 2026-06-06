@@ -654,6 +654,8 @@ class SubscriptionMatcher:
         inserted = 0
         async with AsyncSessionLocal() as db:
             for alias_key, (canonical, category) in PROVIDER_ALIASES.items():
+                if canonical is None:
+                    continue  # payment processors have no canonical name
                 existing = await db.execute(
                     select(ProviderAlias).where(ProviderAlias.alias == alias_key)
                 )
