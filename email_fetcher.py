@@ -144,6 +144,35 @@ def _get_logo_url(service_name: str) -> Optional[str]:
 
 
 
+async def _recalculate_costs(db: AsyncSession, sub_ids: set = None) -> int:
+    """
+    For each subscription (or the given subset), set cost = mode of all
+    non-zero amounts in subscription_events.  Returns the number of rows updated.
+    Uses DISTINCT ON to pick exactly one row per subscription: most frequent
+    amount, ties broken by lowest amount.
+    """
+    from sqlalchemy import text as _text
+    id_filter = f"AND subscription_id IN ({','.join(str(i) for i in sub_ids)})" if sub_ids else ""
+    sql = f"""
+        WITH mode_costs AS (
+            SELECT DISTINCT ON (subscription_id)
+                   subscription_id,
+                   amount AS mode_amount
+            FROM subscription_events
+            WHERE amount > 0 {id_filter}
+            GROUP BY subscription_id, amount
+            ORDER BY subscription_id, COUNT(*) DESC, amount ASC
+        )
+        UPDATE subscriptions
+        SET cost = mode_costs.mode_amount
+        FROM mode_costs
+        WHERE subscriptions.id = mode_costs.subscription_id
+    """
+    result = await db.execute(_text(sql))
+    await db.commit()
+    return result.rowcount
+
+
 class EmailFetcher:
     """Fetch and classify emails from multiple sources."""
 
@@ -432,6 +461,7 @@ class EmailFetcher:
         if not batch: return
         seen_in_batch = set()
         unique_in_batch = []
+        touched_sub_ids: set = set()
         for email in batch:
             msg_id = f"{email['source']}:{email['message_id']}"
             if msg_id not in seen_in_batch:
@@ -457,9 +487,15 @@ class EmailFetcher:
                     result_row2 = await db.execute(select(Subscription).where(func.lower(Subscription.service_name) == norm_name.lower()))
                     existing = result_row2.scalar_one_or_none()
                     if existing:
-                        existing.cost, existing.currency, existing.billing_cycle = classification["cost"] or existing.cost, classification["currency"] or existing.currency, classification["billing_cycle"]
+                        # Never overwrite currency/cycle with blanks; cost is
+                        # recalculated from event mode after the batch commits.
+                        if classification["currency"]:
+                            existing.currency = classification["currency"]
+                        if classification["billing_cycle"]:
+                            existing.billing_cycle = classification["billing_cycle"]
                         existing.updated_at = datetime.utcnow()
                         subscription_id, target_sub = existing.id, existing
+                        touched_sub_ids.add(existing.id)
                     else:
                         start_date = None
                         email_date_str = email.get("date", "")
@@ -506,6 +542,11 @@ class EmailFetcher:
         except Exception as e:
             await db.rollback()
             raise RuntimeError(f"Database commit failed for batch: {e}") from e
+
+        # Recalculate cost for every updated subscription using the mode
+        # (most frequent non-zero amount across all events for that subscription).
+        if touched_sub_ids:
+            await _recalculate_costs(db, touched_sub_ids)
 
     async def _stream_fetch_and_process_gmail(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
         """Fetch Gmail in batches using Group A/B queries and process immediately."""

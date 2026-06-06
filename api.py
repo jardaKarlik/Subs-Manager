@@ -1063,6 +1063,18 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
     return {"map": subs}
 
 
+@app.post("/api/recalculate-costs")
+async def recalculate_costs(db: AsyncSession = Depends(get_db)):
+    """
+    Recompute subscriptions.cost for every subscription using the mode
+    (most frequent non-zero amount) across all subscription_events.
+    Fixes bad parser extractions like Beatport 345 USD when real cost is 15.99.
+    """
+    from email_fetcher import _recalculate_costs
+    updated = await _recalculate_costs(db)
+    return {"status": "ok", "updated": updated}
+
+
 @app.post("/api/match-wallet")
 async def match_wallet():
     """Cross-reference financial records against subscriptions."""
