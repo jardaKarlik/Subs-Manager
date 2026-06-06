@@ -101,6 +101,19 @@ PAYEE_ALIASES = {
     'patreon':              'Patreon',
     'cline':                'Cline',
     'openrouter':           'OpenRouter',
+    # Wallet-discovered subscriptions (promoted from wallet candidates)
+    'disney plus':          'Disney Plus',
+    'disneyplus':           'Disney Plus',
+    'disney+':              'Disney Plus',
+    'tv nova':              'TV Nova',
+    'skyshowtime':          'SkyShowtime',
+    'sky showtime':         'SkyShowtime',
+    'ifttt':                'IFTTT',
+    'roblox':               'Roblox',
+    'loopmasters':          'Loopmasters',
+    'steamgames':           'Steam',
+    'steam purchase':       'Steam',
+    'steam games':          'Steam',
 }
 
 # Payee strings that must NEVER be matched to a subscription.
@@ -532,11 +545,18 @@ class SubscriptionMatcher:
             if not records:
                 return {'error': f'No unmatched records found for payee: {payee}'}
 
-            amounts  = [round(abs(r.amount), 2) for r in records]
-            flat_fee = Counter(amounts).most_common(1)[0][0]
-            last_pay = max(r.date for r in records if r.date)
-            lp_str   = (last_pay.strftime('%Y-%m-%d')
-                        if hasattr(last_pay, 'strftime') else str(last_pay)[:10])
+            amounts   = [round(abs(r.amount), 2) for r in records]
+            flat_fee  = Counter(amounts).most_common(1)[0][0]
+            last_pay  = max(r.date for r in records if r.date)
+            first_pay = min(r.date for r in records if r.date)
+            # last_payment_date is TIMESTAMP — pass a datetime, not a string
+            from datetime import datetime as _dt, date as _date
+            def _to_datetime(d):
+                if isinstance(d, _dt):
+                    return d
+                if isinstance(d, _date):
+                    return _dt(d.year, d.month, d.day)
+                return _dt.fromisoformat(str(d)[:10])
 
             new_sub = Subscription(
                 service_name=service_name,
@@ -547,10 +567,10 @@ class SubscriptionMatcher:
                 status='active',
                 source='wallet_discovery',
                 confirmed_by_wallet=1,
-                last_payment_date=lp_str,
+                last_payment_date=_to_datetime(last_pay),
                 actual_cost=flat_fee,
                 approval_status='approved',
-                start_date=min(r.date for r in records if r.date).strftime('%Y-%m-%d'),
+                start_date=_to_datetime(first_pay).strftime('%Y-%m-%d'),
             )
             db.add(new_sub)
             await db.flush()
