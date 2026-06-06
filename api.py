@@ -134,6 +134,23 @@ async def startup():
     await init_db()
     from scheduler import start_scheduler
     start_scheduler()
+    # Seed provider_aliases from hardcoded dict (skips existing rows)
+    try:
+        from subscription_matcher import SubscriptionMatcher
+        seeded = await SubscriptionMatcher().seed_provider_aliases()
+        if seeded:
+            import logging
+            logging.getLogger("startup").info(f"Seeded {seeded} provider aliases into DB")
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(f"Provider alias seeding failed: {e}")
+    # Sync local industry cache file → provider_industries table
+    try:
+        from industry_resolver import sync_cache_to_db
+        await sync_cache_to_db()
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(f"Industry cache sync failed: {e}")
 
 
 @app.on_event("shutdown")
@@ -1066,13 +1083,41 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
 @app.post("/api/recalculate-costs")
 async def recalculate_costs(db: AsyncSession = Depends(get_db)):
     """
-    Recompute subscriptions.cost for every subscription using the mode
-    (most frequent non-zero amount) across all subscription_events.
-    Fixes bad parser extractions like Beatport 345 USD when real cost is 15.99.
+    Recompute subscriptions.cost (mode of events) and rebuild service_costs
+    rolling 3-month sums for all subscriptions.
     """
     from email_fetcher import _recalculate_costs
+    from subscription_matcher import SubscriptionMatcher
     updated = await _recalculate_costs(db)
-    return {"status": "ok", "updated": updated}
+    service_rows = await SubscriptionMatcher().update_service_costs()
+    return {"status": "ok", "cost_rows_updated": updated, "service_cost_rows": service_rows}
+
+
+@app.post("/api/admin/reset-db")
+async def reset_db():
+    """Drop all tables and recreate schema. Wipes everything. One-time use."""
+    from sqlalchemy import text
+    from database import engine, Base, init_db
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await init_db()
+    return {"status": "ok", "message": "All tables dropped and recreated"}
+
+
+@app.post("/api/admin/sync-industry-cache")
+async def sync_industry_cache():
+    """Sync local .industry_cache.json into provider_industries table."""
+    from industry_resolver import sync_cache_to_db
+    upserted = await sync_cache_to_db()
+    return {"status": "ok", "upserted": upserted}
+
+
+@app.post("/api/admin/seed-aliases")
+async def seed_aliases():
+    """Seed provider_aliases table from hardcoded PROVIDER_ALIASES dict."""
+    from subscription_matcher import SubscriptionMatcher
+    inserted = await SubscriptionMatcher().seed_provider_aliases()
+    return {"status": "ok", "inserted": inserted}
 
 
 @app.post("/api/match-wallet")

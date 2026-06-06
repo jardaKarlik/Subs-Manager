@@ -77,6 +77,7 @@ table.reg th.r,table.reg td.c-mo{text-align:right}
 .svc{display:inline-flex;align-items:center;gap:8px}
 .svc-name{font-weight:600;color:var(--text)}
 .reg-row.is-flagged .svc-name{color:var(--text-dim)}
+.recon-flag{color:var(--orange);font-size:10px;margin-left:5px;cursor:default;vertical-align:middle}
 .c-plan{color:var(--text-dim)}
 .c-cat{font-size:11px;letter-spacing:1.2px}
 .c-mo{color:var(--yellow);font-weight:600;text-align:right;white-space:nowrap}
@@ -265,6 +266,8 @@ th{cursor:pointer;user-select:none}
           <span class="v" id="flagged-savings">$---.-- / MO</span>
         </div>
       </section>
+      <section class="pane pane--muted" id="monthly-trend" style="display:none"></section>
+      <section class="pane pane--muted" id="sync-status" style="display:none"></section>
     </aside>
   </div>
   <footer class="bar-bot">
@@ -521,9 +524,12 @@ function usageBar(sub) {
 
 function fmtSince(d) { return d ? d.substring(0,7) : '—'; }
 
-function extractPlan(notes) {
+function extractPlan(sub) {
+  // Prefer the dedicated plan_name column; fall back to parsing notes
+  if (sub && sub.plan_name) return sub.plan_name;
+  const notes = sub && sub.notes ? sub.notes : sub; // backwards compat if called with string
   if (!notes) return null;
-  const m = notes.match(/Plan:\s*([^\n,]+)/i);
+  const m = String(notes).match(/Plan:\s*([^\n,]+)/i);
   return m ? m[1].trim() : null;
 }
 
@@ -575,8 +581,8 @@ function renderTable() {
 
     return `<tr class="reg-row${flagged?' is-flagged':''}" data-id="${s.id}">
       <td class="c-idx">${String(i+1).padStart(2,'0')}</td>
-      <td class="c-svc"><span class="svc">${logoHtml(s,'md')}<span class="svc-name">${s.service_name.toUpperCase()}</span></span></td>
-      <td class="c-plan">${extractPlan(s.notes)||'—'}</td>
+      <td class="c-svc"><span class="svc">${logoHtml(s,'md')}<span class="svc-name">${s.service_name.toUpperCase()}</span>${s.reconciliation_flag?'<span class="recon-flag" title="Cost mismatch: email vs bank >20%">⚠</span>':''}</span></td>
+      <td class="c-plan">${extractPlan(s)||'—'}</td>
       <td class="c-cat" style="color:${catColor}">${catLabel}</td>
       <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}</td>
       <td class="c-mo-sub">${Math.round(mo * 12)} CZK</td>
@@ -783,20 +789,81 @@ function updateSyncAgo(){
 }
 setInterval(updateSyncAgo,5000);
 
+function renderMonthlyTrend(data) {
+  const el = document.getElementById('monthly-trend');
+  if (!el) return;
+  const months = data.months || [];
+  const byCategory = data.by_category || {};
+  const topCats = (data.top_categories || []).slice(0, 6);
+  if (!months.length || !topCats.length) { el.style.display='none'; return; }
+  el.style.display='block';
+
+  const colW = Math.floor(100 / months.length);
+  const monthLabels = months.map(m =>
+    `<span style="flex:1;text-align:center;font-size:9px;color:var(--text-mute)">${m.substring(5)}</span>`
+  ).join('');
+
+  const rows = topCats.map(cat => {
+    const color = CAT_COLOR[cat] || '#8a8a8e';
+    const vals = months.map(m => (byCategory[cat]||{})[m] || 0);
+    const max = Math.max(...vals, 1);
+    const bars = vals.map((v, i) => {
+      const pct = Math.round((v / max) * 32);
+      return `<span style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px" title="${months[i]}: ${Math.round(v)} CZK">
+        <span style="font-size:8px;color:${v>0?color:'var(--text-mute)'}">${v>0?Math.round(v):''}</span>
+        <span style="width:10px;height:${Math.max(2,pct)}px;background:${color};opacity:.7;border-radius:1px;display:block"></span>
+      </span>`;
+    }).join('');
+    return `<div style="display:flex;align-items:flex-end;gap:4px;padding:3px 0;border-bottom:1px solid var(--hairline)">
+      <span style="width:90px;font-size:9px;color:${color};flex-shrink:0">${cat.replace('_',' ').toUpperCase()}</span>
+      <span style="flex:1;display:flex;align-items:flex-end">${bars}</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="pane-rule"><span class="t">▸ SPEND TREND · 3M BY CATEGORY</span></div>
+    <div style="padding:6px 10px 2px;display:flex;gap:4px;padding-left:100px">${monthLabels}</div>
+    <div style="padding:4px 10px 8px">${rows}</div>`;
+}
+
+function renderSyncStatus(data) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const syncs = data.syncs || [];
+  if (!syncs.length) { el.style.display='none'; return; }
+  el.style.display='block';
+  const rows = syncs.slice(0, 6).map(s => {
+    const ts = s.last_sync_at ? s.last_sync_at.substring(0,16).replace('T',' ') : '—';
+    const stColor = s.status==='success' ? 'var(--green)' : s.status==='running' ? 'var(--yellow)' : 'var(--orange)';
+    return `<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:6px;padding:3px 0;border-bottom:1px solid var(--hairline);font-size:10px;align-items:center">
+      <span style="color:var(--text-dim)">${s.source.toUpperCase()}</span>
+      <span style="color:${stColor}">${s.status.toUpperCase()}</span>
+      <span style="color:var(--text-mute)">${s.emails_processed||0} emails · ${(s.duration_seconds||0).toFixed(1)}s · ${ts}</span>
+    </div>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="pane-rule"><span class="t">▸ SYNC HISTORY</span></div>
+    <div style="padding:4px 10px 8px">${rows}</div>`;
+}
+
 async function loadAll() {
   document.getElementById('bot-ready').textContent='LOADING_';
   document.getElementById('status-dot').textContent='◌ FETCHING';
   document.getElementById('status-dot').style.color='var(--text-dim)';
   try {
-    const [subsResp, spendResp] = await Promise.all([
+    const [subsResp, spendResp, trendResp, syncResp] = await Promise.all([
       fetch(`${API}/api/subscriptions?page_size=500&sort_by=cost&sort_order=desc`),
-      fetch(`${API}/api/wallet-spend-map`).then(r => r.ok ? r.json() : {map: {}})
+      fetch(`${API}/api/wallet-spend-map`).then(r => r.ok ? r.json() : {map: {}}),
+      fetch(`${API}/api/monthly-trend?months=3`).then(r => r.ok ? r.json() : null),
+      fetch(`${API}/api/sync-status`).then(r => r.ok ? r.json() : null),
     ]);
     if(!subsResp.ok) throw new Error(`HTTP ${subsResp.status}`);
     const subsData=await subsResp.json();
     allSubs=subsData.items||[];
     spendMap = (spendResp && spendResp.map) || {};
     renderTable();renderTicker(allSubs);renderAllocation(allSubs);renderFlagged(allSubs);renderBurnRate();renderStats();
+    if (trendResp) renderMonthlyTrend(trendResp);
+    if (syncResp) renderSyncStatus(syncResp);
     lastSync=Date.now();updateSyncAgo();
     document.getElementById('status-dot').textContent='● LIVE';
     document.getElementById('status-dot').style.color='var(--green)';

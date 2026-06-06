@@ -500,6 +500,8 @@ class EmailFetcher:
                             existing.currency = classification["currency"]
                         if classification["billing_cycle"]:
                             existing.billing_cycle = classification["billing_cycle"]
+                        if classification.get("plan_name"):
+                            existing.plan_name = classification["plan_name"]
                         existing.updated_at = datetime.utcnow()
                         subscription_id, target_sub = existing.id, existing
                         touched_sub_ids.add(existing.id)
@@ -517,7 +519,18 @@ class EmailFetcher:
                                 except Exception: pass
                         if not start_date: start_date = datetime.utcnow().strftime("%Y-%m-%d")
                         icon_url = _get_logo_url(classification["service_name"])
-                        new_sub = Subscription(service_name=classification["service_name"], category=classification["category"], cost=classification["cost"], currency=classification["currency"], billing_cycle=classification["billing_cycle"], status="active", start_date=start_date, notes=f"Plan: {classification.get('plan_name', 'Standard')}", source=email["source"], icon_url=icon_url)
+                        new_sub = Subscription(
+                            service_name=classification["service_name"],
+                            category=classification["category"],
+                            cost=classification["cost"],
+                            currency=classification["currency"],
+                            billing_cycle=classification["billing_cycle"],
+                            status=classification.get("status", "active"),
+                            start_date=start_date,
+                            plan_name=classification.get("plan_name"),
+                            source=email["source"],
+                            icon_url=icon_url,
+                        )
                         db.add(new_sub)
                         await db.flush()
                         subscription_id, target_sub = new_sub.id, new_sub
@@ -571,10 +584,11 @@ class EmailFetcher:
         except Exception:
             await db.rollback()  # batch log failure must never break the sync
 
-        # Recalculate cost for every updated subscription using the mode
-        # (most frequent non-zero amount across all events for that subscription).
+        # Recalculate cost + service_costs rolling sums for every touched subscription.
         if touched_sub_ids:
             await _recalculate_costs(db, touched_sub_ids)
+            from subscription_matcher import SubscriptionMatcher
+            await SubscriptionMatcher().update_service_costs(list(touched_sub_ids))
 
     async def _stream_fetch_and_process_gmail(self, db: AsyncSession, max_results: int, since_days: int, results: Dict, *, sync_id: int | None = None) -> None:
         """Fetch Gmail in batches using Group A/B queries and process immediately."""

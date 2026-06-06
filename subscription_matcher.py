@@ -27,7 +27,7 @@ from typing import Optional
 from sqlalchemy import select, func, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import AsyncSessionLocal, Subscription, FinancialRecord
+from database import AsyncSessionLocal, Subscription, FinancialRecord, ServiceCost, SubscriptionEvent, ProviderAlias
 
 logger = logging.getLogger("matcher")
 
@@ -270,17 +270,26 @@ class SubscriptionMatcher:
                 # NOTE: subscriptions iterated here were pre-filtered to
                 # SUBSCRIPTION_CATEGORIES via the _is_subscription_record()
                 # check on each FinancialRecord above.
+                recon_flag = (
+                    sub.cost and sub.cost > 0
+                    and abs(sub.cost - float(flat_fee)) / sub.cost > 0.20
+                )
                 await db.execute(
                     text(
                         f"UPDATE subscriptions SET "
                         f"confirmed_by_wallet = 1, "
                         f"last_payment_date = '{lp_str}', "
-                        f"actual_cost = {float(flat_fee)} "
+                        f"actual_cost = {float(flat_fee)}, "
+                        f"reconciliation_flag = {'TRUE' if recon_flag else 'FALSE'} "
                         f"WHERE id = {int(sub.id)}"
                     )
                 )
 
             await db.commit()
+
+        # Update rolling 3-month cost sums for all confirmed subs
+        if matched_sub_ids:
+            await self.update_service_costs(list(matched_sub_ids))
 
         return {
             'matched':           matched,
@@ -557,3 +566,103 @@ class SubscriptionMatcher:
             'records_matched':         len(records),
             'flat_fee':                flat_fee,
         }
+
+    async def update_service_costs(self, subscription_ids: list = None) -> int:
+        """
+        Aggregate subscription_events by calendar month and upsert into service_costs.
+        Covers the 3 most recent calendar months. Runs for all subs if subscription_ids is None.
+        Returns the number of rows upserted.
+        """
+        from datetime import date, timedelta
+        from calendar import monthrange
+
+        today = date.today()
+        # Build month boundaries for current month and 2 prior months
+        months = []
+        for offset in range(2, -1, -1):  # [2 months ago, 1 month ago, current]
+            year = today.year
+            month = today.month - offset
+            while month <= 0:
+                month += 12
+                year -= 1
+            first = date(year, month, 1)
+            last_day = monthrange(year, month)[1]
+            last = date(year, month, last_day)
+            months.append((first, last))
+
+        upserted = 0
+        async with AsyncSessionLocal() as db:
+            id_filter = (
+                select(SubscriptionEvent)
+                .where(SubscriptionEvent.subscription_id.in_(subscription_ids))
+                if subscription_ids else select(SubscriptionEvent)
+            )
+            all_events_result = await db.execute(id_filter)
+            all_events = all_events_result.scalars().all()
+
+            # Group events by subscription_id
+            by_sub: dict = {}
+            for ev in all_events:
+                by_sub.setdefault(ev.subscription_id, []).append(ev)
+
+            for sub_id, events in by_sub.items():
+                total_spent = round(sum(abs(ev.amount) for ev in events), 2)
+                month_amounts = []
+                for (first, last) in months:
+                    month_sum = sum(
+                        abs(ev.amount) for ev in events
+                        if ev.event_date and first <= ev.event_date.date() <= last
+                    )
+                    month_amounts.append(round(month_sum, 2))
+
+                currency = events[0].currency if events else "CZK"
+                last_3_total = round(sum(month_amounts), 2)
+
+                existing = await db.execute(
+                    select(ServiceCost).where(ServiceCost.subscription_id == sub_id)
+                )
+                row = existing.scalar_one_or_none()
+                if row:
+                    row.total_spent = total_spent
+                    row.month_1_amount = month_amounts[0]
+                    row.month_2_amount = month_amounts[1]
+                    row.month_3_amount = month_amounts[2]
+                    row.last_3_months_total = last_3_total
+                    row.currency = currency
+                    row.last_updated = datetime.utcnow()
+                else:
+                    db.add(ServiceCost(
+                        subscription_id=sub_id,
+                        total_spent=total_spent,
+                        month_1_amount=month_amounts[0],
+                        month_2_amount=month_amounts[1],
+                        month_3_amount=month_amounts[2],
+                        last_3_months_total=last_3_total,
+                        currency=currency,
+                    ))
+                upserted += 1
+
+            await db.commit()
+        return upserted
+
+    async def seed_provider_aliases(self) -> int:
+        """
+        Seed the provider_aliases table from the hardcoded PROVIDER_ALIASES dict
+        in email_parser.py. Skips entries that already exist. Returns count inserted.
+        """
+        from email_parser import PROVIDER_ALIASES
+        inserted = 0
+        async with AsyncSessionLocal() as db:
+            for alias_key, (canonical, category) in PROVIDER_ALIASES.items():
+                existing = await db.execute(
+                    select(ProviderAlias).where(ProviderAlias.alias == alias_key)
+                )
+                if existing.scalar_one_or_none() is None:
+                    db.add(ProviderAlias(
+                        alias=alias_key,
+                        canonical_name=canonical,
+                        category=category,
+                    ))
+                    inserted += 1
+            await db.commit()
+        return inserted

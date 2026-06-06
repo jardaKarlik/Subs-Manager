@@ -70,6 +70,10 @@ class Subscription(Base):
     actual_cost: Mapped[float] = mapped_column(Float, nullable=True)
     # Approval workflow: pending (wallet_discovery) → approved | dismissed
     approval_status: Mapped[str] = mapped_column(String(20), default="approved")
+    # Plan tier detected from email body (Premium, Pro, Free, Standard, …)
+    plan_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    # Set when abs(cost - actual_cost) / cost > 0.20 — email vs wallet cost mismatch
+    reconciliation_flag: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -107,6 +111,8 @@ class Subscription(Base):
             "last_payment_date": self._iso(self.last_payment_date),
             "actual_cost": self.actual_cost,
             "approval_status": self.approval_status or "approved",
+            "plan_name": self.plan_name,
+            "reconciliation_flag": bool(self.reconciliation_flag),
             "created_at": self._iso(self.created_at),
             "updated_at": self._iso(self.updated_at),
         }

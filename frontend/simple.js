@@ -20,14 +20,18 @@ const colors = {
 
 async function loadSubscriptions() {
     try {
-        const [subsRes, statsRes, pendingRes] = await Promise.all([
+        const [subsRes, statsRes, pendingRes, trendRes, syncRes] = await Promise.all([
             fetch(`${API_BASE}/subscriptions?page_size=200`),
             fetch(`${API_BASE}/stats`),
             fetch(`${API_BASE}/subscriptions?approval_status=pending&page_size=50`),
+            fetch(`${API_BASE}/monthly-trend?months=3`),
+            fetch(`${API_BASE}/sync-status`),
         ]);
         const data = await subsRes.json();
         const stats = await statsRes.json();
         const pendingData = await pendingRes.json();
+        const trendData = trendRes.ok ? await trendRes.json() : null;
+        const syncData = syncRes.ok ? await syncRes.json() : null;
         const subs = data.items || [];
         const pendingSubs = pendingData.items || [];
 
@@ -35,6 +39,8 @@ async function loadSubscriptions() {
         renderSubscriptions(subs);
         renderPendingSection(pendingSubs);
         loadCandidates();
+        if (trendData) renderMonthlyTrend(trendData);
+        if (syncData) renderSyncStatus(syncData);
     } catch (err) {
         console.error('Error loading subscriptions:', err);
         document.getElementById('subscriptions').innerHTML = '<div class="loading">Error loading data</div>';
@@ -154,6 +160,10 @@ function renderSubscriptions(subs) {
             ? `<span class="badge-verified" title="Confirmed by bank records">✓</span>`
             : '';
 
+        const reconFlag = sub.reconciliation_flag
+            ? `<span class="badge-recon" title="Cost mismatch: email vs bank >20%">⚠</span>`
+            : '';
+
         // Total spent badge (top-right of card)
         const totalSpentHtml = sub.total_spent
             ? `<div class="sub-total-spent" title="Total spent from bank records">${sub.total_spent.toFixed(0)} CZK total</div>`
@@ -162,6 +172,11 @@ function renderSubscriptions(subs) {
         // Source badge
         const sourceBadge = sub.source && sub.source !== 'manual'
             ? `<span class="badge-source">${sub.source.replace('_', ' ')}</span>`
+            : '';
+
+        // Plan badge
+        const planBadge = sub.plan_name && sub.plan_name !== 'Standard'
+            ? `<span class="badge-plan">${sub.plan_name}</span>`
             : '';
 
         // Show actual cost from wallet if it differs meaningfully from email-parsed cost
@@ -175,13 +190,13 @@ function renderSubscriptions(subs) {
             : '';
 
         return `
-            <div class="sub-card${sub.confirmed_by_wallet ? ' sub-card--verified' : ''}">
+            <div class="sub-card${sub.confirmed_by_wallet ? ' sub-card--verified' : ''}${sub.reconciliation_flag ? ' sub-card--recon' : ''}">
                 <div class="sub-card-top">
                     <div class="sub-icon" style="background: ${color};">${initials}</div>
                     ${totalSpentHtml}
                 </div>
-                <div class="sub-name">${sub.service_name} ${verified}</div>
-                <div class="sub-category">${sub.category} ${sourceBadge}</div>
+                <div class="sub-name">${sub.service_name} ${verified}${reconFlag}</div>
+                <div class="sub-category">${sub.category} ${sourceBadge}${planBadge}</div>
                 <div class="sub-cost">${currency}${cost}</div>
                 ${actualCostHtml}
                 ${lastPayment}
@@ -292,6 +307,58 @@ async function syncData() {
     
     btn.textContent = '↻ Sync';
     btn.disabled = false;
+}
+
+function renderMonthlyTrend(data) {
+    const el = document.getElementById('monthly-trend');
+    if (!el) return;
+    const months = data.months || [];
+    const byCategory = data.by_category || {};
+    const topCats = data.top_categories || [];
+    if (!months.length) { el.style.display = 'none'; return; }
+
+    const rows = topCats.slice(0, 8).map(cat => {
+        const color = colors[cat] || colors.other;
+        const vals = months.map(m => (byCategory[cat] || {})[m] || 0);
+        const max = Math.max(...vals, 1);
+        const bars = vals.map((v, i) => {
+            const pct = Math.round((v / max) * 100);
+            return `<div class="trend-bar-wrap" title="${months[i]}: ${v.toFixed(0)} CZK">
+                <div class="trend-bar" style="height:${pct}%; background:${color};"></div>
+                <div class="trend-bar-label">${v > 0 ? v.toFixed(0) : ''}</div>
+            </div>`;
+        }).join('');
+        return `<div class="trend-row">
+            <div class="trend-cat" style="color:${color}">${cat}</div>
+            <div class="trend-bars">${bars}</div>
+        </div>`;
+    }).join('');
+
+    const monthLabels = months.map(m => `<div class="trend-month-label">${m.substring(5)}</div>`).join('');
+    el.innerHTML = `
+        <div class="trend-title">Spend by category — last 3 months</div>
+        <div class="trend-month-row">${monthLabels}</div>
+        ${rows}
+    `;
+}
+
+function renderSyncStatus(data) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    const syncs = data.syncs || [];
+    if (!syncs.length) { el.style.display = 'none'; return; }
+    el.innerHTML = `
+        <div class="sync-title">Last sync runs</div>
+        ${syncs.slice(0, 6).map(s => {
+            const ts = s.last_sync_at ? s.last_sync_at.substring(0, 16).replace('T', ' ') : '—';
+            const statusClass = s.status === 'success' ? 'sync-ok' : s.status === 'running' ? 'sync-running' : 'sync-err';
+            return `<div class="sync-row">
+                <span class="sync-source">${s.source}</span>
+                <span class="${statusClass}">${s.status}</span>
+                <span class="sync-meta">${s.emails_processed || 0} emails · ${(s.duration_seconds || 0).toFixed(1)}s · ${ts}</span>
+            </div>`;
+        }).join('')}
+    `;
 }
 
 // Load on startup

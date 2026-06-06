@@ -199,6 +199,47 @@ def resolve_industry(provider_name: str) -> str:
         return DEFAULT_CATEGORY
 
 
+async def sync_cache_to_db() -> int:
+    """
+    Read the local .industry_cache.json and upsert all entries into
+    provider_industries table. Returns number of rows upserted.
+    Only called from async API context (startup or admin endpoint).
+    """
+    from sqlalchemy import select
+    from database import AsyncSessionLocal, ProviderIndustry
+
+    cache = _load_cache()
+    if not cache:
+        return 0
+
+    upserted = 0
+    async with AsyncSessionLocal() as db:
+        for key, entry in cache.items():
+            category = entry.get("category", DEFAULT_CATEGORY)
+            cached_at_str = entry.get("cached_at")
+            try:
+                last_resolved = datetime.fromisoformat(cached_at_str) if cached_at_str else datetime.utcnow()
+            except Exception:
+                last_resolved = datetime.utcnow()
+
+            existing = await db.execute(
+                select(ProviderIndustry).where(ProviderIndustry.provider_name == key)
+            )
+            row = existing.scalar_one_or_none()
+            if row:
+                row.category = category
+                row.last_resolved = last_resolved
+            else:
+                db.add(ProviderIndustry(
+                    provider_name=key,
+                    category=category,
+                    last_resolved=last_resolved,
+                ))
+            upserted += 1
+        await db.commit()
+    return upserted
+
+
 if __name__ == "__main__":
     # Quick test
     test_names = ["Netflix", "GitHub", "Spotify", "DigitalOcean", "OpenAI", "Adobe"]
