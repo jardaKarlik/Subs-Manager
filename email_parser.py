@@ -99,15 +99,32 @@ BLOCKLIST_SERVICES = {
     'booking', 'airbnb', 'g2a', 'vinted', 'bazos',
     'copygeneral', 'globus', 'europosters', 'zasilkovna',
     'ticketmaster', 'asfinag',
+    # airlines — transactional, not subscriptions
+    'klm', 'klm-mail', 'klm mail', 'koninklijke luchtvaa',
+    'ryanair', 'wizzair', 'wizz air', 'easyjet', 'lufthansa',
+    'emirates', 'british airways', 'aerlingus', 'flydubai',
+    'info-flyingblue', 'flyingblue',
     # payment processors — not subscriptions
     'paypal', 'stripe', 'comgate', 'paddle', 'gocardless',
     't-mobile', 'tmobile', 'o2', 'vodafone',
     # clearly wrong extractions
     'view', 'shareholders', 'nl', 'mg', 'www', 'hotmail',
-    'sendmail01', 'info-flyingblue', 'koninklijke luchtvaa',
-    'payitgov', 'chooseatlas', 'htallc', '2fast4buds',
+    'sendmail01', 'payitgov', 'chooseatlas', 'htallc', '2fast4buds',
     'list', 'product', 'notifications', 'sendmail',
 }
+
+# Subject keywords that indicate a one-time purchase, not a subscription
+# Used to block marketplace purchase receipts even from known providers
+PURCHASE_SUBJECT_SIGNALS = {
+    'your order', 'order confirmation', 'order receipt', 'order #',
+    'purchase confirmation', 'purchase receipt', 'you bought',
+    'download receipt', 'track receipt', 'release receipt',
+    'marketplace order', 'vaše objednávka', 'potvrzení objednávky',
+}
+
+# Cost ceiling: amounts above this in CZK-equivalent are almost certainly
+# purchase totals, not subscription fees. ~250 EUR/mo upper bound.
+MAX_SUBSCRIPTION_COST_CZK = 6000
 
 # ═════════════════════════════════════════════
 # PROVIDER ALIAS MAPPINGS (sender @domain -> canonical name)
@@ -158,7 +175,7 @@ PROVIDER_ALIASES = {
     "amazonpay": ("Amazon", "payment_processor"),
     "amazonmusic": ("Amazon", "music"),
     # Meta
-    "meta": ("Meta", "cloud"),
+    "meta": ("Meta", "social"),
     "facebook": ("Meta", "cloud"),
     "instagram": ("Meta", "cloud"),
     "whatsapp": ("Meta", "cloud"),
@@ -511,10 +528,20 @@ class EmailClassifier:
             is_subscription = False
             confidence = 0.0
 
-        # One-time purchases are not recurring subscriptions unless from a known provider
-        if payment_type == 'one-time' and not provider:
+        # One-time purchases are not recurring subscriptions (even for known providers)
+        if payment_type == 'one-time':
             is_subscription = False
             confidence = 0.0
+
+        # Purchase receipt subject lines → block even from known providers (e.g. Beatport orders)
+        subject_lower = text_lower[:200]  # subject is always near the start
+        if any(sig in subject_lower for sig in PURCHASE_SUBJECT_SIGNALS):
+            is_subscription = False
+            confidence = 0.0
+
+        # Cost sanity ceiling: >6000 CZK/mo is almost certainly a purchase total, not a fee
+        if amount > MAX_SUBSCRIPTION_COST_CZK:
+            amount = 0.0  # zero it out; wallet will set actual_cost correctly
 
         return {
             "is_subscription": is_subscription,
