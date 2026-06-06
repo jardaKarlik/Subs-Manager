@@ -6,7 +6,7 @@ To switch to PostgreSQL (production), set DATABASE_URL env var:
   postgresql+asyncpg://user:password@host:port/dbname
 """
 
-from fastapi import FastAPI, HTTPException, Depends, Query, status
+from fastapi import FastAPI, HTTPException, Depends, Query, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -1102,6 +1102,42 @@ async def reset_db():
         await conn.run_sync(Base.metadata.drop_all)
     await init_db()
     return {"status": "ok", "message": "All tables dropped and recreated"}
+
+
+@app.post("/api/admin/backfill")
+async def start_backfill(background_tasks: BackgroundTasks, since_days: int = 102, max_results: int = 50000):
+    """
+    Fire a full email backfill as a background task — returns immediately,
+    runs in the background so Railway's 5-min HTTP gateway doesn't cut it off.
+    Monitor progress via GET /api/sync-status.
+    """
+    async def _run():
+        import logging
+        log = logging.getLogger("backfill")
+        log.info(f"Background backfill started: since_days={since_days}, max_results={max_results}")
+        try:
+            from email_fetcher import EmailFetcher
+            from database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                results = await EmailFetcher().process_emails(
+                    db=db, since_days=since_days, max_results=max_results
+                )
+            log.info(f"Backfill done: {results}")
+            # Auto-run match + recalculate after emails are done
+            from subscription_matcher import SubscriptionMatcher
+            from email_fetcher import _recalculate_costs
+            from database import AsyncSessionLocal
+            match_result = await SubscriptionMatcher().match_all()
+            log.info(f"Match done: {match_result}")
+            async with AsyncSessionLocal() as db:
+                await _recalculate_costs(db)
+            await SubscriptionMatcher().update_service_costs()
+            log.info("Recalculate done")
+        except Exception as e:
+            log.error(f"Backfill error: {e}", exc_info=True)
+
+    background_tasks.add_task(_run)
+    return {"status": "started", "message": f"Backfill running in background (since_days={since_days}). Watch /api/sync-status."}
 
 
 @app.post("/api/admin/sync-industry-cache")
