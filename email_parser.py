@@ -176,6 +176,16 @@ NEGATIVE_KEYWORDS = [
 BLOCKLIST_SERVICES = {
     'vase', 'vaše', 'apetitonline', 'superzoo', 'braintreegateway',
     'fastspring',
+    # e-commerce / marketplaces — not subscription services
+    'ebay', 'ebay s', 'amazon', 'temu', 'aliexpress', 'shein',
+    'datart', 'alza', 'mall', 'czc', 'notifikace', 'novinky',
+    'booking', 'airbnb', 'g2a', 'vinted', 'bazos',
+    'copygeneral', 'globus', 'europosters', 'zasilkovna',
+    'ticketmaster', 'asfinag',
+    # clearly wrong extractions
+    'view', 'shareholders', 'nl', 'mg', 'www', 'hotmail',
+    'sendmail01', 'info-flyingblue', 'koninklijke luchtvaa',
+    'payitgov', 'chooseatlas', 'htallc', '2fast4buds',
 }
 
 MUSIC_PURCHASE_HINTS = [
@@ -416,6 +426,11 @@ class EmailClassifier:
             is_subscription = False
             confidence = 0.0
 
+        # One-time purchases are not recurring subscriptions unless from a known provider
+        if billing_cycle == 'one-time' and not provider_match:
+            is_subscription = False
+            confidence = 0.0
+
         return {
             'is_subscription': is_subscription,
             'confidence': round(confidence, 2),
@@ -500,6 +515,12 @@ class EmailClassifier:
                 service = re.sub(r'\s+(Luxembourg|Ireland|Payments)$', '', service, flags=re.I)
                 service = re.sub(r'\s+', ' ', service)
                 service = re.sub(r'[,;:#-]+$', '', service).strip()
+                # Reject sentence fragments: real business names have ≤3 words
+                if len(service.split()) > 3:
+                    continue
+                # Reject if it looks like a sentence (contains common verbs/articles)
+                if re.search(r'\b(you|the|your|our|all|this|that|with|for|and|bring|learn|see|view|more|about|today|new|way|manage|stress|say|hello|across|multiple|platforms|demands|beyond|reuse|verified|kyc|information)\b', service, re.I):
+                    continue
                 return service
         return None
 
