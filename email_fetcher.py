@@ -22,7 +22,7 @@ from email.header import decode_header
 from email_parser import EmailClassifier, ACCOUNT_CREATION_KEYWORDS
 from database import (
     Subscription, ProcessedEmail, SubscriptionEvent,
-    AsyncSessionLocal
+    BatchProcess, SyncMetadata, AsyncSessionLocal
 )
 
 
@@ -456,9 +456,16 @@ class EmailFetcher:
 
     # ── Batch Processing & Streaming ──────────────────────────────
 
-    async def _process_email_batch(self, db: AsyncSession, batch: List[Dict], results: Dict) -> None:
+    async def _process_email_batch(
+        self, db: AsyncSession, batch: List[Dict], results: Dict,
+        *, source: str = "unknown", batch_number: int = 0,
+        group_label: str | None = None, sync_id: int | None = None,
+    ) -> None:
         """Deduplicate, classify, and store a batch of emails immediately."""
         if not batch: return
+        import time as _time
+        _batch_start = _time.monotonic()
+        _batch_before = (results["processed"], results["skipped"], results["failed"])
         seen_in_batch = set()
         unique_in_batch = []
         touched_sub_ids: set = set()
@@ -543,12 +550,33 @@ class EmailFetcher:
             await db.rollback()
             raise RuntimeError(f"Database commit failed for batch: {e}") from e
 
+        # Log this batch to batch_processes
+        _duration = _time.monotonic() - _batch_start
+        _p, _s, _f = results["processed"], results["skipped"], results["failed"]
+        _bp, _bs, _bf = _batch_before
+        try:
+            db.add(BatchProcess(
+                sync_id=sync_id,
+                source=source,
+                batch_number=batch_number,
+                group_label=group_label,
+                fetched=len(batch),
+                processed=_p - _bp,
+                skipped=_s - _bs,
+                failed=_f - _bf,
+                status="success",
+                duration_seconds=round(_duration, 3),
+            ))
+            await db.commit()
+        except Exception:
+            await db.rollback()  # batch log failure must never break the sync
+
         # Recalculate cost for every updated subscription using the mode
         # (most frequent non-zero amount across all events for that subscription).
         if touched_sub_ids:
             await _recalculate_costs(db, touched_sub_ids)
 
-    async def _stream_fetch_and_process_gmail(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
+    async def _stream_fetch_and_process_gmail(self, db: AsyncSession, max_results: int, since_days: int, results: Dict, *, sync_id: int | None = None) -> None:
         """Fetch Gmail in batches using Group A/B queries and process immediately."""
         from email_parser import EmailClassifier
         classifier = EmailClassifier()
@@ -591,7 +619,7 @@ class EmailFetcher:
                         batch_num += 1
                         fetched_count += len(unique_batch)
                         total_fetched += len(unique_batch)
-                        await self._process_email_batch(db, unique_batch, results)
+                        await self._process_email_batch(db, unique_batch, results, source="gmail", batch_number=batch_num, group_label=group_label, sync_id=sync_id)
                         print(f"  Gmail [{group_label}] #{batch_num}: {len(unique_batch)} processed -> total: {results['processed']}")
                         page_token = data.get("nextPageToken")
                         if not page_token: break
@@ -602,7 +630,7 @@ class EmailFetcher:
                         break
         results["sources"]["gmail"] = total_fetched
 
-    async def _stream_fetch_and_process_outlook(self, db: AsyncSession, max_results: int, since_days: int, results: Dict) -> None:
+    async def _stream_fetch_and_process_outlook(self, db: AsyncSession, max_results: int, since_days: int, results: Dict, *, sync_id: int | None = None) -> None:
         """Fetch Outlook in batches and process immediately."""
         outlook_account = os.getenv("OUTLOOK_ACCOUNT_ID")
         composio_client = self._get_composio()
@@ -622,7 +650,7 @@ class EmailFetcher:
                 if not batch_emails: break
                 batch_num += 1
                 fetched_count += len(batch_emails)
-                await self._process_email_batch(db, batch_emails, results)
+                await self._process_email_batch(db, batch_emails, results, source="outlook", batch_number=batch_num, sync_id=sync_id)
                 print(f"  Outlook batch #{batch_num}: {len(batch_emails)} fetched -> total processed: {results['processed']}")
                 if not data.get("@odata.nextLink") or len(batch_emails) == 0: break
                 import asyncio
@@ -634,22 +662,48 @@ class EmailFetcher:
 
     async def process_emails(self, db: AsyncSession, sources: List[str] = None, max_results: int = 500, since_days: int = 365) -> Dict:
         """Fetch and process emails incrementally. Raises on critical failure."""
+        import time as _time
+        import logging as _logging
         if sources is None: sources = ["gmail", "outlook", "imap"]
         results = {"processed": 0, "new_subscriptions": 0, "skipped": 0, "failed": 0, "sources": {}}
+
         for source in sources:
+            # Create a SyncMetadata row at the start of each source run
+            sync_row = SyncMetadata(source=source, status="running")
+            db.add(sync_row)
+            await db.flush()  # get sync_row.id
+            sync_id = sync_row.id
+            _src_start = _time.monotonic()
             try:
-                if source == "gmail": await self._stream_fetch_and_process_gmail(db, max_results, since_days, results)
-                elif source == "outlook": await self._stream_fetch_and_process_outlook(db, max_results, since_days, results)
+                if source == "gmail":
+                    await self._stream_fetch_and_process_gmail(db, max_results, since_days, results, sync_id=sync_id)
+                elif source == "outlook":
+                    await self._stream_fetch_and_process_outlook(db, max_results, since_days, results, sync_id=sync_id)
                 elif source == "imap":
                     emails = await self.fetch_imap(max_results, since_days)
-                    if emails: await self._process_email_batch(db, emails, results)
-                    results["sources"]["imap"] = len(emails)
+                    if emails:
+                        await self._process_email_batch(db, emails, results, source="imap", batch_number=1, sync_id=sync_id)
+                    results["sources"]["imap"] = len(emails) if emails else 0
+                sync_row.status = "success"
             except Exception as e:
-                # Log and re-raise critical errors (DB failures, auth failures)
-                # so the API returns HTTP 500 instead of fake success counts
-                import logging
-                logging.getLogger(__name__).error(f"Critical error processing source {source}: {e}")
+                sync_row.status = "error"
+                sync_row.error_message = f"{type(e).__name__}: {e}"[:1000]
+                _logging.getLogger(__name__).error(f"Critical error processing source {source}: {e}")
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
                 raise RuntimeError(f"Email processing failed for {source}: {e}") from e
+            finally:
+                sync_row.emails_processed = results["sources"].get(source, 0)
+                sync_row.subscriptions_found = results["new_subscriptions"]
+                sync_row.duration_seconds = round(_time.monotonic() - _src_start, 2)
+                sync_row.last_sync_at = datetime.utcnow()
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+
         return results
 
     # ── Helpers ────────────────────────────────────────────────────

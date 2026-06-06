@@ -1357,6 +1357,19 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
             for r in records
         ]
     }
+
+
+@app.post("/api/admin/reset-batch-table")
+async def reset_batch_table(db: AsyncSession = Depends(get_db)):
+    """Drop and recreate batch_processes with the current schema. One-time use."""
+    from sqlalchemy import text
+    from database import init_db
+    await db.execute(text("DROP TABLE IF EXISTS batch_processes"))
+    await db.commit()
+    await init_db()
+    return {"status": "ok", "message": "batch_processes dropped and recreated"}
+
+
 # ============================================================================
 # Mount Frontend Static Files (AFTER all API routes to avoid route capture)
 # Prefer frontend/ (simple UI with wallet features), fall back to glass dist.

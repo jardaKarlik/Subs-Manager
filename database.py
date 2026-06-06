@@ -252,6 +252,29 @@ class ProviderIndustry(Base):
     last_resolved: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class BatchProcess(Base):
+    """One row per email batch fetched during a sync run.
+
+    Linked to SyncMetadata via sync_id so you can drill from run → batches.
+    Written by email_fetcher after each _process_email_batch call.
+    """
+    __tablename__ = "batch_processes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    sync_id: Mapped[int] = mapped_column(Integer, nullable=True)   # FK to sync_metadata.id
+    source: Mapped[str] = mapped_column(String(50), nullable=False) # gmail / outlook / imap
+    batch_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    group_label: Mapped[str] = mapped_column(String(10), nullable=True)  # A/B for gmail
+    fetched: Mapped[int] = mapped_column(Integer, default=0)
+    processed: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="success")  # success / error
+    error_message: Mapped[str] = mapped_column(String(1000), nullable=True)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 async def init_db():
     """Initialize database - create all tables."""
     async with engine.begin() as conn:
