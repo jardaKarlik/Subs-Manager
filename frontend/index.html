@@ -214,7 +214,7 @@ th{cursor:pointer;user-select:none}
               <th onclick="sortBy('category')">CAT</th>
               <th class="r" onclick="sortBy('cost')">CZK/MO</th>
               <th class="r" onclick="sortBy('yearly_cost')">CZK/YR</th>
-              <th class="r">TOTAL</th>
+              <th class="r" title="Estimated lifetime spend: avg monthly × months since detected start date">EST. TOTAL</th>
               <th>USE</th>
               <th onclick="sortBy('start_date')">SINCE</th>
               <th onclick="sortBy('status')">STATUS</th>
@@ -526,6 +526,36 @@ function usageBar(sub) {
 
 function fmtSince(d) { return d ? d.substring(0,7) : '—'; }
 
+/** Months between dateStr (YYYY-MM-DD) and today, minimum 1. */
+function monthsSince(dateStr) {
+  if (!dateStr) return null;
+  const start = new Date(dateStr);
+  const now   = new Date();
+  const m = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  return Math.max(1, m);
+}
+
+/**
+ * Estimated lifetime total spend in CZK.
+ * Uses avg_monthly_czk (wallet-based) if available, else parser monthly cost.
+ * Multiplied by months since start_date to give lifetime estimate.
+ * For wallet-confirmed subs we take the max(wallet_total, monthly × months)
+ * so the real payments are never hidden.
+ */
+function totalEstCzk(sub) {
+  const mo = monthly(sub);           // avg monthly in CZK (wallet-preferred)
+  if (mo === 0) return null;
+  const spend = getWalletSpend(sub.id);
+  const months = monthsSince(sub.start_date);
+  if (!months) return spend ? Math.round(spend.total_czk) : null;
+  const estimated = Math.round(mo * months);
+  // If we have real wallet data, return whichever is larger (actual vs estimate)
+  if (spend && spend.total_czk > 0) {
+    return Math.max(estimated, Math.round(spend.total_czk));
+  }
+  return estimated;
+}
+
 function extractPlan(sub) {
   // Prefer the dedicated plan_name column; fall back to parsing notes
   if (sub && sub.plan_name) return sub.plan_name;
@@ -572,7 +602,14 @@ function renderTable() {
     const dot      = flagged ? '<span class="dot dot--warn"></span>FLAGGED' : '<span class="dot dot--ok"></span>ACTIVE';
     const spend = getWalletSpend(s.id);
     const hasSpend = spend && spend.payments > 0;
-    const totalSpent = hasSpend ? Math.round(spend.total_czk) + ' CZK' : '—';
+    const _totalEst = totalEstCzk(s);
+    const months = monthsSince(s.start_date);
+    const totalDisplay = _totalEst
+      ? Math.round(_totalEst / 100) * 100 + ' CZK'   // round to nearest 100 for estimates
+      : '—';
+    const totalTitle = _totalEst && months
+      ? `Est. ${months}mo × ${Math.round(mo)} CZK/mo${hasSpend ? ` · wallet confirmed: ${Math.round(spend.total_czk)} CZK` : ''}`
+      : '';
     const lastDate = hasSpend ? (spend.last_payment || '').substring(0,10) : '—';
     // SINCE: use first wallet record date when available (most accurate), else start_date
     const sinceDate = hasSpend && spend.first_payment ? spend.first_payment.substring(0,7) : fmtSince(s.start_date);
@@ -588,7 +625,7 @@ function renderTable() {
       <td class="c-cat" style="color:${catColor}">${catLabel}</td>
       <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}</td>
       <td class="c-mo-sub">${Math.round(mo * 12)} CZK</td>
-      <td class="c-total-spent" style="text-align:right">${hasSpend ? Math.round(spend.total_czk) + ' CZK' : '—'}</td>
+      <td class="c-total-spent" style="text-align:right" title="${totalTitle}">${totalDisplay}${hasSpend ? '<span style="display:block;font-size:9px;color:var(--accent)">✓ WALLET</span>' : ''}</td>
       <td class="c-use">${usageBar(s)}</td>
       <td class="c-since">${fmtSince(s.start_date)}</td>
       <td class="c-status">${dot}</td>
