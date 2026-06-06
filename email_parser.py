@@ -551,7 +551,9 @@ class EmailClassifier:
         return score, hits
 
     def _resolve_provider(self, sender_lower, domain, body_lower):
-        """Resolve provider from sender email domain. Checks full @domain."""
+        """Resolve provider from sender email domain. Checks full @domain.
+        Falls back to Google Places API (via industry_resolver) for unknown providers.
+        """
         for alias, (name, cat) in PROVIDER_ALIASES.items():
             matcher = _PROVIDER_MATCHERS[alias]
             if (matcher.search(sender_lower)
@@ -564,6 +566,18 @@ class EmailClassifier:
                 if extracted:
                     return self._resolve_provider(extracted, extracted, body_lower)
                 return None
+
+        # Not in hardcoded aliases — try Google Places API (cached, ~0ms for known providers)
+        service_name = self._service_from_domain(domain)
+        if service_name:
+            try:
+                from industry_resolver import resolve_industry
+                category = resolve_industry(service_name)
+                if category and category != "other":
+                    return {"name": service_name, "category": category, "alias": None}
+            except Exception:
+                pass
+
         return None
 
     def _extract_service_from_body(self, body_lower):
