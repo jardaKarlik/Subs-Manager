@@ -222,7 +222,7 @@ th{cursor:pointer;user-select:none}
               <th class="c-plan">PLAN</th>
               <th onclick="sortBy('category')">CAT</th>
               <th class="r" onclick="sortBy('cost')">MONTHLY COST</th>
-              <th class="r" onclick="sortBy('yearly_cost')">ANNUAL</th>
+              <th class="r" onclick="sortBy('yearly_cost')">TOTAL PAID</th>
               <th class="r c-total-spent">EST. TOTAL</th>
               <th>USE</th>
               <th onclick="sortBy('start_date')">SINCE</th>
@@ -246,9 +246,9 @@ th{cursor:pointer;user-select:none}
       <section class="pane pane--muted pane--burn" aria-label="Burn rate">
         <div class="pane-rule"><span class="t">▸ BURN RATE · TOP 10</span><span class="hint" style="font-size:8px" id="burn-hint">ALL CURRENCIES</span></div>
         <div class="burn-head">
-          <span class="big" id="burn-total">$---.--</span>
-          <span class="per">/ MO · USD</span>
-          <span class="mom" id="burn-yr">$---- / YR</span>
+          <span class="big" id="burn-total">---</span>
+          <span class="per">CZK TOTAL PAID</span>
+          <span class="mom" id="burn-yr">--- CZK / MO AVG</span>
         </div>
         <div class="burn-chart" style="display:block;overflow-y:auto">
           <div id="burn-top10" style="padding:4px 8px 8px;display:flex;flex-direction:column;gap:6px;font-size:11px">
@@ -633,7 +633,7 @@ function renderTable() {
       <td class="c-plan">${extractPlan(s)||'—'}</td>
       <td class="c-cat" style="color:${catColor}">${catLabel}</td>
       <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}</td>
-      <td class="c-mo-sub">${Math.round(mo * 12)} CZK</td>
+      <td class="c-mo-sub">${(spendMap[s.id]&&spendMap[s.id].total_czk)?Math.round(spendMap[s.id].total_czk).toLocaleString()+' CZK':'~'+Math.round(mo*12)+' CZK'}</td>
       <td class="c-total-spent" style="text-align:right" title="${totalTitle}">${totalDisplay}${hasSpend ? '<span style="display:block;font-size:9px;color:var(--accent)">✓ WALLET</span>' : ''}</td>
       <td class="c-use">${usageBar(s)}</td>
       <td class="c-since">${fmtSince(s.start_date)}</td>
@@ -791,15 +791,25 @@ async function renderStats() {
     }
   } catch(e) { /* ignore */ }
 
-  // All costs are CZK (monthly() returns CZK)
-  const total = allSubs.reduce((s,x) => s + monthly(x), 0);
   const active = allSubs.filter(x => x.status === 'active').length;
   const flagged = allSubs.filter(x => x.status === 'idle').length;
 
-  document.getElementById('mtd-total').textContent = Math.round(total) + ' CZK';
+  // Actual total: sum of all wallet payments (total_czk per sub)
+  const actualTotal = Object.values(spendMap).reduce((s, v) => s + (v.total_czk || 0), 0);
+  // Month span from earliest sub start_date to now
+  const dates = allSubs.map(s => s.start_date).filter(Boolean).sort();
+  let walletMonths = 1;
+  if (dates.length) {
+    const [ey, em] = dates[0].split('-').map(Number);
+    const now = new Date();
+    walletMonths = Math.max(1, (now.getFullYear() - ey) * 12 + now.getMonth() + 1 - em + 1);
+  }
+  const moAvg = actualTotal > 0 ? Math.round(actualTotal / walletMonths) : 0;
+
+  document.getElementById('mtd-total').textContent = Math.round(actualTotal) + ' CZK';
   document.getElementById('mtd-yearly').textContent = 'removed';
-  document.getElementById('burn-total').textContent = Math.round(total) + ' CZK';
-  document.getElementById('burn-yr').textContent = Math.round(total * 12) + ' CZK / YR';
+  document.getElementById('burn-total').textContent = Math.round(actualTotal).toLocaleString() + ' CZK';
+  document.getElementById('burn-yr').textContent = moAvg.toLocaleString() + ' CZK / MO AVG';
   document.getElementById('meta-counts').textContent = `${active} ACTIVE / ${flagged} FLAGGED`;
 
   renderBurnRate();
