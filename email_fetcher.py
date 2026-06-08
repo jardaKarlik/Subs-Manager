@@ -146,10 +146,13 @@ def _get_logo_url(service_name: str) -> Optional[str]:
 
 async def _recalculate_costs(db: AsyncSession, sub_ids: set = None) -> int:
     """
-    For each subscription (or the given subset), set cost = mode of all
-    non-zero amounts in subscription_events.  Returns the number of rows updated.
-    Uses DISTINCT ON to pick exactly one row per subscription: most frequent
-    amount, ties broken by lowest amount.
+    For each subscription (or the given subset), set cost + currency = mode of
+    all non-zero (amount, currency) pairs in subscription_events.
+    Returns the number of rows updated.
+
+    Groups by (subscription_id, amount, currency) so the winning pair is the
+    most-frequent combination — e.g. (365, CZK) x3 beats (100, GBP) x1.
+    Ties broken by lowest amount, then alphabetically by currency.
     """
     from sqlalchemy import text as _text
     id_filter = f"AND subscription_id IN ({','.join(str(i) for i in sub_ids)})" if sub_ids else ""
@@ -157,14 +160,16 @@ async def _recalculate_costs(db: AsyncSession, sub_ids: set = None) -> int:
         WITH mode_costs AS (
             SELECT DISTINCT ON (subscription_id)
                    subscription_id,
-                   amount AS mode_amount
+                   amount   AS mode_amount,
+                   currency AS mode_currency
             FROM subscription_events
             WHERE amount > 0 {id_filter}
-            GROUP BY subscription_id, amount
-            ORDER BY subscription_id, COUNT(*) DESC, amount ASC
+            GROUP BY subscription_id, amount, currency
+            ORDER BY subscription_id, COUNT(*) DESC, amount ASC, currency ASC
         )
         UPDATE subscriptions
-        SET cost = mode_costs.mode_amount
+        SET cost     = mode_costs.mode_amount,
+            currency = mode_costs.mode_currency
         FROM mode_costs
         WHERE subscriptions.id = mode_costs.subscription_id
     """
