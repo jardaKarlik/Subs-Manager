@@ -70,33 +70,83 @@ GROUP_B_KEYWORDS = {
 # ═════════════════════════════════════════════
 
 NEGATIVE_KEYWORDS = {
-    "offer": -0.30, "discount": -0.30, "sale": -0.25,
-    "promo": -0.25, "promotion": -0.25, "coupon": -0.25,
-    "newsletter": -0.40, "unsubscribe": -0.30,
-    "weekly digest": -0.40, "weekly update": -0.30,
-    "job alert": -0.40, "marketing": -0.40,
-    "advertisement": -0.40, "you might like": -0.35,
-    "recommended for you": -0.35, "flash sale": -0.35,
-    "limited time": -0.30, "percent off": -0.25,
-    "referral": -0.30, "invite": -0.20, "gift": -0.20,
-    "reward": -0.20, "check out": -0.20,
-    "don t miss": -0.25, "last chance": -0.25,
-    "board snapshot": -0.40, "comment on": -0.30,
-    "push notification": -0.35, "mentioned you": -0.30,
-    "new comment": -0.30, "new reply": -0.30, "spam": -0.50,
-    "reklama": -0.40, "akce": -0.20, "sleva": -0.30, "darek": -0.20,
-    "ads": -0.30, "ad": -0.25, "kredit": -0.25, "vracena": -0.30,
-    "quota": -0.30, "quota increase": -0.35,
-    "past due": -0.25, "overdue": -0.25, "refund": -0.30,
-    # Czech promotional patterns
-    "získejte": -0.35,      # "get/obtain up to X" — classic Czech promo opener
-    "cashback": -0.35,      # cashback offers
-    "voucher": -0.30,       # voucher/gift card offers
-    "na nákup": -0.30,      # "for purchase of X" — promo language
-    "připravte se": -0.25,  # "prepare yourself" — teaser marketing
-    "vzrušující": -0.20,    # "exciting" — hype language in promos
-    "k nákupu": -0.30,      # "on purchase" — promo condition
-    "při nákupu": -0.30,    # "when purchasing" — promo condition
+    # ── Offers & Discounts ──────────────────────────────────────────────────
+    # Specific phrases first (longer match takes priority in scoring)
+    "special offer": -0.50, "exclusive offer": -0.50, "exclusive deal": -0.45,
+    "limited time offer": -0.50, "flash sale": -0.45, "clearance sale": -0.45,
+    "black friday": -0.50, "cyber monday": -0.50,
+    "save up to": -0.40, "percent off": -0.35, "% off": -0.35,
+    "free gift": -0.45, "gift with purchase": -0.50,
+    # Single-word offer signals (lower weight — could combine with others)
+    "offer": -0.40, "discount": -0.40, "sale": -0.35,
+    "promo": -0.35, "promotion": -0.35,
+    "coupon": -0.40, "voucher": -0.40,
+    "clearance": -0.40, "deals": -0.40,
+    "cashback": -0.40,
+
+    # ── Shopping / Buy-Now Language ─────────────────────────────────────────
+    "shop now": -0.45, "buy now": -0.40, "order now": -0.35,
+    "add to cart": -0.50, "browse now": -0.40,
+    "redeem": -0.35, "redeem now": -0.45,
+    "earn": -0.20, "earn points": -0.40,
+    "loyalty": -0.30, "reward": -0.25, "points": -0.20,
+    "win": -0.30, "prize": -0.40, "sweepstakes": -0.50,
+    "gift": -0.25, "giveaway": -0.45,
+    "limited time": -0.30, "last chance": -0.35, "don t miss": -0.35,
+
+    # ── Product Announcements / Newsletters ─────────────────────────────────
+    "newsletter": -0.45, "unsubscribe": -0.35,
+    "weekly digest": -0.45, "weekly update": -0.30,
+    "you might like": -0.40, "recommended for you": -0.40,
+    "check out": -0.20, "introducing": -0.15, "just launched": -0.20,
+
+    # ── Social / Notification Noise ─────────────────────────────────────────
+    "job alert": -0.45, "marketing": -0.45, "advertisement": -0.45,
+    "board snapshot": -0.45, "comment on": -0.30,
+    "push notification": -0.40, "mentioned you": -0.35,
+    "new comment": -0.35, "new reply": -0.35,
+    "referral": -0.30, "invite": -0.20, "spam": -0.50,
+    "ads": -0.35, "ad": -0.25,
+
+    # ── Finance / Reversals (not subscriptions) ─────────────────────────────
+    "refund": -0.30, "past due": -0.25, "overdue": -0.25,
+    "kredit": -0.25, "vracena": -0.30,
+    "quota": -0.30, "quota increase": -0.40,
+
+    # ── Czech: Offers & Promo ────────────────────────────────────────────────
+    "nabídka": -0.35,                   # offer
+    "speciální nabídka": -0.50,         # special offer
+    "exkluzivní nabídka": -0.50,        # exclusive offer
+    "výhodná nabídka": -0.45,           # great-value offer
+    "limitovaná nabídka": -0.45,        # limited offer
+    "akční nabídka": -0.45,             # sale/promotional offer
+    "akce": -0.25,                      # sale/promo event
+    "sleva": -0.40,                     # discount
+    "slevový kód": -0.50,               # discount code
+    "promo kód": -0.50,                 # promo code
+    "výprodej": -0.45,                  # clearance/sale
+    "reklama": -0.45,                   # advertisement
+
+    # ── Czech: Shopping / Buy-Now ────────────────────────────────────────────
+    "získejte": -0.40,                  # "get/obtain" — promo opener
+    "nakupte": -0.40,                   # shop now / buy now
+    "objednejte": -0.35,                # order now
+    "ušetřete": -0.40,                  # save (money)
+    "na nákup": -0.35,                  # "for purchase of X"
+    "při nákupu": -0.35,                # "when purchasing"
+    "k nákupu": -0.35,                  # "on purchase"
+    "darek": -0.30,                     # gift/freebie
+
+    # ── Czech: Contests / Loyalty ────────────────────────────────────────────
+    "vyhrajte": -0.45,                  # win (imperative)
+    "soutěž": -0.45,                    # contest/competition
+    "sbírejte": -0.35,                  # collect (points/rewards)
+    "věrnostní": -0.35,                 # loyalty (program)
+
+    # ── Czech: Teaser / Hype Language ────────────────────────────────────────
+    "připravte se": -0.30,              # "prepare yourself" (teaser)
+    "vzrušující": -0.25,                # "exciting" (marketing hype)
+    "cashback": -0.40,
 }
 
 BLOCKLIST_SERVICES = {
