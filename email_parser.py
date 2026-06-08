@@ -88,6 +88,15 @@ NEGATIVE_KEYWORDS = {
     "ads": -0.30, "ad": -0.25, "kredit": -0.25, "vracena": -0.30,
     "quota": -0.30, "quota increase": -0.35,
     "past due": -0.25, "overdue": -0.25, "refund": -0.30,
+    # Czech promotional patterns
+    "získejte": -0.35,      # "get/obtain up to X" — classic Czech promo opener
+    "cashback": -0.35,      # cashback offers
+    "voucher": -0.30,       # voucher/gift card offers
+    "na nákup": -0.30,      # "for purchase of X" — promo language
+    "připravte se": -0.25,  # "prepare yourself" — teaser marketing
+    "vzrušující": -0.20,    # "exciting" — hype language in promos
+    "k nákupu": -0.30,      # "on purchase" — promo condition
+    "při nákupu": -0.30,    # "when purchasing" — promo condition
 }
 
 BLOCKLIST_SERVICES = {
@@ -120,6 +129,22 @@ PURCHASE_SUBJECT_SIGNALS = {
     'purchase confirmation', 'purchase receipt', 'you bought',
     'download receipt', 'track receipt', 'release receipt',
     'marketplace order', 'vaše objednávka', 'potvrzení objednávky',
+}
+
+# Sender subdomain prefixes that indicate bulk/marketing mail (ESPs, CRM tools).
+# Emails from these are promotional newsletters, never transactional receipts.
+# A strong penalty is applied to both Group A and Group B scores.
+#   bmail.   — bulk mail (Sony, others using Salesforce/ExactTarget)
+#   enews.   — email newsletter
+#   em.      — ExactTarget / Salesforce Marketing Cloud bulk sends
+#   promo.   — promotional sender
+#   offers.  — offer emails
+#   marketing. — marketing sender
+#   newsletter. — newsletter sender
+#   digest.  — digest/roundup emails
+BULK_SENDER_SUBDOMAINS = {
+    "bmail.", "enews.", "em.", "promo.", "offers.",
+    "marketing.", "newsletter.", "digest.",
 }
 
 # Cost ceiling: amounts above this in CZK-equivalent are almost certainly
@@ -469,6 +494,13 @@ class EmailClassifier:
         a_score, a_hits = self._score_group(text_lower, subject_lower, _COMPILED_A)
         b_score, b_hits = self._score_group(text_lower, subject_lower, _COMPILED_B)
         neg_score, neg_hits = self._score_group(text_lower, subject_lower, _COMPILED_NEG)
+
+        # Bulk/marketing sender penalty — applied before flooring so it compounds
+        # with keyword negatives. Emails from bulk-mail subdomains (bmail., em., etc.)
+        # are always promotional newsletters, never subscription receipts.
+        if any(sender_domain.startswith(sub) for sub in BULK_SENDER_SUBDOMAINS):
+            a_score -= 0.40
+            b_score -= 0.40
 
         a_final = max(0.0, a_score + neg_score)
         b_final = max(0.0, b_score + neg_score)
