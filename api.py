@@ -94,6 +94,11 @@ class SubscriptionResponse(BaseModel):
     icon_url: Optional[str]
     created_at: Optional[str]
     updated_at: Optional[str]
+    # Wallet cross-reference fields
+    confirmed_by_wallet: Optional[int] = None
+    last_payment_date: Optional[str] = None
+    actual_cost: Optional[float] = None
+    plan_name: Optional[str] = None
 
     class Config:
         from_attributes = True

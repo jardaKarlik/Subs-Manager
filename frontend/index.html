@@ -535,6 +535,14 @@ function usageBar(sub) {
 
 function fmtSince(d) { return d ? d.substring(0,7) : '—'; }
 
+/** Format YYYY-MM as "Mar '26" */
+function fmtMonth(ym) {
+  if (!ym) return null;
+  const [y, m] = ym.split('-');
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${names[parseInt(m,10)-1]} '${y.slice(2)}`;
+}
+
 /** Months between dateStr (YYYY-MM-DD) and today, minimum 1. */
 function monthsSince(dateStr) {
   if (!dateStr) return null;
@@ -619,7 +627,14 @@ function renderTable() {
     const totalTitle = _totalEst && months
       ? `Est. ${months}mo × ${Math.round(mo)} CZK/mo${hasSpend ? ` · wallet confirmed: ${Math.round(spend.total_czk)} CZK` : ''}`
       : '';
-    const lastDate = hasSpend ? (spend.last_payment || '').substring(0,10) : '—';
+    // Last payment date: prefer wallet record, fall back to API last_payment_date field
+    const lastDateRaw = (hasSpend && spend.last_payment)
+      ? spend.last_payment.substring(0, 7)
+      : (s.last_payment_date ? s.last_payment_date.substring(0, 7) : null);
+    const lastDate = lastDateRaw || '—';
+    const lastPaidHtml = lastDateRaw
+      ? `<span style="display:block;font-size:9px;color:var(--text-mute);letter-spacing:.3px;margin-top:1px">↳ ${fmtMonth(lastDateRaw)}</span>`
+      : '';
     // SINCE: use first wallet record date when available (most accurate), else start_date
     const sinceDate = hasSpend && spend.first_payment ? spend.first_payment.substring(0,7) : fmtSince(s.start_date);
     const sparklineHtml = hasSpend ? renderSparkline(s.id, spend.dates, spend.total_czk) : usageBar(s);
@@ -632,7 +647,7 @@ function renderTable() {
       <td class="c-svc"><span class="svc">${logoHtml(s,'md')}<span class="svc-name">${s.service_name.toUpperCase()}</span>${s.reconciliation_flag?'<span class="recon-flag" title="Cost mismatch: email vs bank >20%">⚠</span>':''}</span></td>
       <td class="c-plan">${extractPlan(s)||'—'}</td>
       <td class="c-cat" style="color:${catColor}">${catLabel}</td>
-      <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}</td>
+      <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}${lastPaidHtml}</td>
       <td class="c-mo-sub">${(spendMap[s.id]&&spendMap[s.id].total_czk)?Math.round(spendMap[s.id].total_czk).toLocaleString()+' CZK':'~'+Math.round(mo*12)+' CZK'}</td>
       <td class="c-total-spent" style="text-align:right" title="${totalTitle}">${totalDisplay}${hasSpend ? '<span style="display:block;font-size:9px;color:var(--accent)">✓ WALLET</span>' : ''}</td>
       <td class="c-use">${usageBar(s)}</td>
