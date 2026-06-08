@@ -132,10 +132,12 @@ MAX_SUBSCRIPTION_COST_CZK = 6000
 
 PROVIDER_ALIASES = {
     # Media & Entertainment
-    "sony": ("Sony", "entertainment"),
+    "sony": ("Sony", "gaming"),
     "playstation": ("Sony", "gaming"),
-    "sonyentertainment": ("Sony", "entertainment"),
+    "sonyentertainment": ("Sony", "gaming"),
     "sonyinteractive": ("Sony", "gaming"),
+    "psn": ("Sony", "gaming"),
+    "siee": ("Sony", "gaming"),
     # Google
     "google": ("Google", "cloud"),
     "googlemail": ("Google", "cloud"),
@@ -664,10 +666,31 @@ class EmailClassifier:
         return "active"
 
     def _extract_amount(self, text):
-        """Extract the most plausible monetary amount with currency context."""
+        """Extract the most plausible monetary amount with currency context.
+
+        Candidates are ranked by a three-tier system:
+          Tier 2 – subscription-specific keywords ("subscription", "předplatné", …)
+          Tier 1 – generic billing keywords ("payment", "invoice", "platba", …)
+          Tier 0 – purchase-total keywords ("total", "celkem", …) — weakest signal;
+                   these appear in order receipts and almost always refer to the
+                   cart/order total, not the recurring subscription fee.
+        Within the same tier, the candidate *closest* to the keyword wins.
+        When distance is also equal, prefer the *smaller* amount — subscription
+        fees are almost always smaller than one-off purchase totals in the same email.
+        """
+        # Tier 2: unambiguously means "here is your recurring fee"
+        SUBSCRIPTION_CONTEXT = re.compile(
+            r"\b(subscription fee|recurring|auto.?renew|membership fee|"
+            r"předplatné|poplatek za předplatné|měsíční poplatek|roční poplatek|"
+            r"monthly fee|annual fee|your plan|váš plán|obnoven[oaí])\b", re.I)
+        # Tier 1: generic billing — good signal but could be a one-time charge
         BILLING_CONTEXT = re.compile(
-            r"\b(paid|amount|total|charged|billed|payment|invoice|receipt|"
-            r"celkem|castka|cena|faktura|platba|uhrada)\b", re.I)
+            r"\b(paid|amount|charged|billed|payment|invoice|receipt|"
+            r"platba|uhrada|faktura)\b", re.I)
+        # Tier 0: order/purchase totals — weakest; likely the cart total, not the fee
+        TOTAL_CONTEXT = re.compile(
+            r"\b(total|celkem|castka|cena|order total|suma)\b", re.I)
+
         candidates = []
         for pattern in _COMPILED_AMOUNT:
             for m in pattern.finditer(text):
@@ -688,14 +711,32 @@ class EmailClassifier:
                 window_start = max(0, m.start() - 150)
                 window_end = min(len(text), m.end() + 150)
                 window = text[window_start:window_end]
+
+                sm = SUBSCRIPTION_CONTEXT.search(window)
                 bm = BILLING_CONTEXT.search(window)
-                billing_dist = abs(m.start() - window_start - (bm.start() if bm else 9999))
-                has_billing = 1 if bm else 0
-                candidates.append((has_billing, billing_dist, amount, currency, m.start()))
+                pm = TOTAL_CONTEXT.search(window)
+
+                if sm:
+                    tier = 2
+                    ref_pos = sm.start()
+                elif bm:
+                    tier = 1
+                    ref_pos = bm.start()
+                elif pm:
+                    tier = 0
+                    ref_pos = pm.start()
+                else:
+                    tier = -1
+                    ref_pos = 9999
+
+                billing_dist = abs(m.start() - window_start - ref_pos)
+                # (tier, dist, amount) — higher tier wins, then closer keyword,
+                # then smaller amount (subscription fees < purchase totals)
+                candidates.append((tier, billing_dist, amount, currency, m.start()))
 
         if not candidates:
             return 0.0, "USD"
-        candidates.sort(key=lambda x: (-x[0], x[1], -x[2]))
+        candidates.sort(key=lambda x: (-x[0], x[1], x[2]))
         _, _, amount, currency, _ = candidates[0]
         return amount, currency
 
