@@ -427,7 +427,7 @@ class EmailFetcher:
 
     # ── Batch Processing & Streaming ──────────────────────────────
 
-    async def _process_email_batch(self, db: AsyncSession, batch: List[Dict], results: Dict) -> None:
+    async def _process_email_batch(self, db: AsyncSession, batch: List[Dict], results: Dict, source: str = "unknown") -> None:
         """Deduplicate, classify, and store a batch of emails immediately."""
         if not batch: return
         seen_in_batch = set()
@@ -550,7 +550,7 @@ class EmailFetcher:
                         batch_num += 1
                         fetched_count += len(unique_batch)
                         total_fetched += len(unique_batch)
-                        await self._process_email_batch(db, unique_batch, results)
+                        await self._process_email_batch(db, unique_batch, results, source="gmail")
                         print(f"  Gmail [{group_label}] #{batch_num}: {len(unique_batch)} processed -> total: {results['processed']}")
                         page_token = data.get("nextPageToken")
                         if not page_token: break
@@ -581,7 +581,7 @@ class EmailFetcher:
                 if not batch_emails: break
                 batch_num += 1
                 fetched_count += len(batch_emails)
-                await self._process_email_batch(db, batch_emails, results)
+                await self._process_email_batch(db, batch_emails, results, source="outlook")
                 print(f"  Outlook batch #{batch_num}: {len(batch_emails)} fetched -> total processed: {results['processed']}")
                 if not data.get("@odata.nextLink") or len(batch_emails) == 0: break
                 import asyncio
@@ -601,7 +601,7 @@ class EmailFetcher:
                 elif source == "outlook": await self._stream_fetch_and_process_outlook(db, max_results, since_days, results)
                 elif source == "imap":
                     emails = await self.fetch_imap(max_results, since_days)
-                    if emails: await self._process_email_batch(db, emails, results)
+                    if emails: await self._process_email_batch(db, emails, results, source="imap")
                     results["sources"]["imap"] = len(emails)
             except Exception as e:
                 # Log and re-raise critical errors (DB failures, auth failures)
