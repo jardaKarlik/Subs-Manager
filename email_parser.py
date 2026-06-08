@@ -69,37 +69,6 @@ GROUP_B_KEYWORDS = {
 # NEGATIVE — Marketing/Noise Keywords (applied to BOTH groups)
 # ═════════════════════════════════════════════
 
-<<<<<<< HEAD
-NEGATIVE_KEYWORDS = [
-    'offer', 'discount', 'sale', 'free trial', 'limited time',
-    '50% off', '% off', 'promo', 'promotion', 'coupon',
-    'referral', 'invite', 'gift', 'reward',
-    'unsubscribe', 'marketing', 'newsletter',
-    'action required', 'verify your', 'confirm your email',
-    'job alert', 'board snapshot', 'digest', 'weekly update',
-    'vase', 'vaše', 'apetitonline', 'superzoo', 'braintreegateway',
-    'fastspring', 'joom', 'saily',
-]
-
-BLOCKLIST_SERVICES = {
-    'vase', 'vaše', 'apetitonline', 'superzoo', 'braintreegateway',
-    'fastspring',
-    # e-commerce / marketplaces — not subscription services
-    'ebay', 'ebay s', 'amazon', 'temu', 'aliexpress', 'shein',
-    'datart', 'alza', 'mall', 'czc', 'notifikace', 'novinky',
-    'booking', 'airbnb', 'g2a', 'vinted', 'bazos',
-    'copygeneral', 'globus', 'europosters', 'zasilkovna',
-    'ticketmaster', 'asfinag',
-    # clearly wrong extractions
-    'view', 'shareholders', 'nl', 'mg', 'www', 'hotmail',
-    'sendmail01', 'info-flyingblue', 'koninklijke luchtvaa',
-    'payitgov', 'chooseatlas', 'htallc', '2fast4buds',
-}
-
-MUSIC_PURCHASE_HINTS = [
-    'download', 'track', 'release', 'label', 'wav', 'mp3', 'order', 'purchase',
-]
-=======
 NEGATIVE_KEYWORDS = {
     "offer": -0.30, "discount": -0.30, "sale": -0.25,
     "promo": -0.25, "promotion": -0.25, "coupon": -0.25,
@@ -128,10 +97,28 @@ NEGATIVE_KEYWORDS = {
     "refund": -0.30,                 # Refund notifications
 }
 
+BLOCKLIST_SERVICES = {
+    'vase', 'vaše', 'apetitonline', 'superzoo', 'braintreegateway',
+    'fastspring',
+    # e-commerce / marketplaces — not subscription services
+    'ebay', 'ebay s', 'amazon', 'temu', 'aliexpress', 'shein',
+    'datart', 'alza', 'mall', 'czc', 'notifikace', 'novinky',
+    'booking', 'airbnb', 'g2a', 'vinted', 'bazos',
+    'copygeneral', 'globus', 'europosters', 'zasilkovna',
+    'ticketmaster', 'asfinag',
+    # clearly wrong extractions
+    'view', 'shareholders', 'nl', 'mg', 'www', 'hotmail',
+    'sendmail01', 'info-flyingblue', 'koninklijke luchtvaa',
+    'payitgov', 'chooseatlas', 'htallc', '2fast4buds',
+}
+
+MUSIC_PURCHASE_HINTS = [
+    'download', 'track', 'release', 'label', 'wav', 'mp3', 'order', 'purchase',
+]
+
 # ═════════════════════════════════════════════
 # PROVIDER ALIAS MAPPINGS (sender @domain -> canonical name)
 # ═════════════════════════════════════════════
->>>>>>> b301e08 (Email pipeline overhaul: dual-context classification, Group A/B search queries, provider dedup, industry resolver, payment type detection, monthly trend API, CZK/YR removal)
 
 PROVIDER_ALIASES = {
     # Media & Entertainment
@@ -640,25 +627,6 @@ class EmailClassifier:
                     return status
         return "active"
 
-<<<<<<< HEAD
-        for pattern in patterns.get(processor, []):
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                service = match.group(1).strip()
-                # Clean up common suffixes and trailing punctuation
-                service = re.sub(r'\s+(LLC|Ltd|Inc|GmbH|S\.r\.o\.|a\.s\.|s\.r\.o|Limited|PBC)\.?$', '', service, flags=re.I)
-                service = re.sub(r'\s+(Luxembourg|Ireland|Payments)$', '', service, flags=re.I)
-                service = re.sub(r'\s+', ' ', service)
-                service = re.sub(r'[,;:#-]+$', '', service).strip()
-                # Reject sentence fragments: real business names have ≤3 words
-                if len(service.split()) > 3:
-                    continue
-                # Reject if it looks like a sentence (contains common verbs/articles)
-                if re.search(r'\b(you|the|your|our|all|this|that|with|for|and|bring|learn|see|view|more|about|today|new|way|manage|stress|say|hello|across|multiple|platforms|demands|beyond|reuse|verified|kyc|information)\b', service, re.I):
-                    continue
-                return service
-        return None
-
     def _refine_category(self, service_name: Optional[str], category: str, text_lower: str) -> str:
         """Refine broad categories using service and message context."""
         service_lower = (service_name or '').lower()
@@ -675,26 +643,8 @@ class EmailClassifier:
 
         return category
 
-    def build_search_queries(self, since_days: int = 365, groups: Optional[List[str]] = None) -> List[str]:
-        """Build Gmail-style discovery queries for targeted mailbox sampling/backfill."""
-        selected = groups or list(SEARCH_QUERY_GROUPS.keys())
-        after = (datetime.now() - timedelta(days=since_days)).strftime('%Y/%m/%d')
-        queries = []
-        for group in selected:
-            for query in SEARCH_QUERY_GROUPS.get(group, []):
-                queries.append(f"({query}) after:{after}")
-        return queries
-
-    def _extract_amount(self, text: str) -> Tuple[float, str]:
-        """Extract the most plausible monetary amount with currency context.
-
-        Strategy: score candidates by proximity to billing keywords; prefer
-        largest amount as tiebreaker so reference numbers lose to actual costs.
-        """
-=======
     def _extract_amount(self, text):
         """Extract the most plausible monetary amount with currency context."""
->>>>>>> b301e08 (Email pipeline overhaul: dual-context classification, Group A/B search queries, provider dedup, industry resolver, payment type detection, monthly trend API, CZK/YR removal)
         BILLING_CONTEXT = re.compile(
             r"\b(paid|amount|total|charged|billed|payment|invoice|receipt|"
             r"celkem|castka|cena|faktura|platba|uhrada)\b", re.I)
@@ -708,13 +658,9 @@ class EmailClassifier:
                     continue
                 if amount <= 0:
                     continue
-<<<<<<< HEAD
                 if len(re.sub(r'\D', '', m.group(1))) > 8:
                     continue
-                ctx      = text[max(0, m.start()-20):m.end()+10]
-=======
                 ctx = text[max(0, m.start()-20):m.end()+10]
->>>>>>> b301e08 (Email pipeline overhaul: dual-context classification, Group A/B search queries, provider dedup, industry resolver, payment type detection, monthly trend API, CZK/YR removal)
                 currency = self._detect_currency(ctx)
                 cap = MAX_COST.get(currency, 5000)
                 if amount > cap:
