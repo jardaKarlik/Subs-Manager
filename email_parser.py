@@ -516,12 +516,10 @@ class EmailClassifier:
 
         if (service_name or '').lower().strip() in BLOCKLIST_SERVICES:
             is_subscription = False
-            confidence = 0.0
 
         # One-time purchases are not recurring subscriptions unless from a known provider
-        if payment_type == 'one-time' and not provider_match:
+        if payment_type == 'one-time' and not provider:
             is_subscription = False
-            confidence = 0.0
 
         return {
             "is_subscription": is_subscription,
