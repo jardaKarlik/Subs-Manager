@@ -1353,6 +1353,69 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
     }
 
 
+
+
+@app.post("/api/recalculate-costs")
+async def recalculate_costs(db: AsyncSession = Depends(get_db)):
+    from email_fetcher import _recalculate_costs
+    from subscription_matcher import SubscriptionMatcher
+    updated = await _recalculate_costs(db)
+    service_rows = await SubscriptionMatcher().update_service_costs()
+    return {"status": "ok", "cost_rows_updated": updated, "service_cost_rows": service_rows}
+
+
+@app.post("/api/admin/reset-db")
+async def reset_db():
+    from database import engine, Base, init_db
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await init_db()
+    return {"status": "ok", "message": "All tables dropped and recreated"}
+
+
+@app.post("/api/admin/backfill")
+async def start_backfill(background_tasks: BackgroundTasks, since_days: int = 102, max_results: int = 50000):
+    async def _run():
+        import logging
+        log = logging.getLogger("backfill")
+        log.info(f"Background backfill started: since_days={since_days}, max_results={max_results}")
+        try:
+            from email_fetcher import EmailFetcher
+            from database import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                results = await EmailFetcher().process_emails(
+                    db=db, since_days=since_days, max_results=max_results
+                )
+            log.info(f"Backfill done: {results}")
+            from subscription_matcher import SubscriptionMatcher
+            from email_fetcher import _recalculate_costs
+            from database import AsyncSessionLocal
+            match_result = await SubscriptionMatcher().match_all()
+            log.info(f"Match done: {match_result}")
+            async with AsyncSessionLocal() as db:
+                await _recalculate_costs(db)
+            await SubscriptionMatcher().update_service_costs()
+            log.info("Recalculate done")
+        except Exception as e:
+            log.error(f"Backfill error: {e}", exc_info=True)
+    background_tasks.add_task(_run)
+    return {"status": "started", "message": f"Backfill running in background (since_days={since_days}). Watch /api/sync-status."}
+
+
+@app.post("/api/admin/sync-industry-cache")
+async def sync_industry_cache():
+    from industry_resolver import sync_cache_to_db
+    upserted = await sync_cache_to_db()
+    return {"status": "ok", "upserted": upserted}
+
+
+@app.post("/api/admin/seed-aliases")
+async def seed_aliases():
+    from subscription_matcher import SubscriptionMatcher
+    inserted = await SubscriptionMatcher().seed_provider_aliases()
+    return {"status": "ok", "inserted": inserted}
+
+
 @app.get("/api/subscriptions/{subscription_id}/transactions")
 async def get_subscription_transactions(
     subscription_id: int,
