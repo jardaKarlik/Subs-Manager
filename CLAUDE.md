@@ -18,7 +18,7 @@ curl -sk https://mysubz.up.railway.app/api/sync-status
 Then tell the user:
 > "Confirmed: [N] subs in DB, API live. Last sync: [date]. What are we working on?"
 
-If `git pull` shows new commits — read `memory/CODEBASE_STRUCTURE.md` before touching anything. State may have changed since your training context.
+If `git pull` shows new commits — read `memory/project_architecture.md` before touching anything. State may have changed since your training context.
 
 ---
 
@@ -32,7 +32,7 @@ If `git pull` shows new commits — read `memory/CODEBASE_STRUCTURE.md` before t
 | **Local path** | `C:\_dev\subscription_manager` |
 | **Deploy** | Railway auto-deploys on push to `master` |
 | **DB** | Railway PostgreSQL (`Postgres-f5H6`), accessed via `DATABASE_PUBLIC_URL` from local |
-| **Memory** | `C:\Users\jaros\.claude\projects\C---dev-subscription-manager\memory\` |
+| **Memory** | `memory/` (in repo — readable by all Claude clients) |
 
 ---
 
@@ -101,12 +101,9 @@ Single-file frontend (`frontend/index.html`) talks to a FastAPI backend (`api.py
 
 | File | Contents |
 |---|---|
-| `memory/CODEBASE_STRUCTURE.md` | Files, endpoints, DB schema, frontend functions |
-| `memory/NEXT_STEPS.md` | Current state, known issues, roadmap |
-| `memory/WORKING_PATTERNS.md` | Debugging patterns, anti-patterns, data flow |
-| `memory/feedback_structured_workflow.md` | Work block-by-block rule |
-| `memory/feedback_multi_computer_workflow.md` | Multi-computer git workflow |
-| `memory/user_shorthand.md` | "subs" = subscriptions, etc. |
+| `memory/project_architecture.md` | Stack, files, DB schema, data pipeline, API endpoints, frontend functions |
+| `memory/project_deploy.md` | Railway IDs, deploy flow, DB wipe/backfill sequence, env vars |
+| `memory/feedback.md` | Hard-won patterns, anti-patterns, parser quirks, what to avoid |
 
 ---
 
