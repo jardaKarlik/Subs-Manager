@@ -132,6 +132,19 @@ class StatsResponse(BaseModel):
 @app.on_event("startup")
 async def startup():
     await init_db()
+    # One-time migration: add mailbox column if it does not exist yet
+    try:
+        from sqlalchemy import text
+        from database import engine
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "ALTER TABLE subscription_events ADD COLUMN IF NOT EXISTS mailbox VARCHAR(50)"
+            ))
+        import logging
+        logging.getLogger("startup").info("mailbox migration: ok")
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(f"mailbox migration skipped: {e}")
     from scheduler import start_scheduler
     start_scheduler()
 
