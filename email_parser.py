@@ -519,7 +519,7 @@ class EmailClassifier:
             confidence = 0.0
 
         # One-time purchases are not recurring subscriptions unless from a known provider
-        if billing_cycle == 'one-time' and not provider_match:
+        if payment_type == 'one-time' and not provider_match:
             is_subscription = False
             confidence = 0.0
 
