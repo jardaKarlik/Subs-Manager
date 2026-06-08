@@ -6,7 +6,7 @@ To switch to PostgreSQL (production), set DATABASE_URL env var:
   postgresql+asyncpg://user:password@host:port/dbname
 """
 
-from fastapi import FastAPI, HTTPException, Depends, Query, status
+from fastapi import FastAPI, HTTPException, Depends, Query, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
