@@ -850,6 +850,7 @@ async def health_check():
         "endpoints": [
             "/api/subscriptions",
             "/api/subscriptions/{id}",
+            "/api/subscriptions/{id}/transactions",
             "/api/stats",
             "/api/summary",
             "/api/categories",
@@ -1337,6 +1338,144 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
             for r in records
         ]
     }
+
+
+@app.get("/api/subscriptions/{subscription_id}/transactions")
+async def get_subscription_transactions(
+    subscription_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get transaction history for a subscription with bank confirmation status.
+    
+    Returns all SubscriptionEvent records for the given subscription, enriched with
+    bank confirmation data from FinancialRecord matches.
+    
+    Bank confirmation logic:
+    - YYYY-MM of FinancialRecord.date matches YYYY-MM of SubscriptionEvent.event_date
+    - Amount tolerance: abs(abs(FinancialRecord.amount) - SubscriptionEvent.amount) / max(SubscriptionEvent.amount, 1) <= 0.30
+    - If SubscriptionEvent.amount is 0, any FinancialRecord in same month = confirmed
+    """
+    from database import FinancialRecord
+    
+    # FX to CZK conversion rates
+    FX_TO_CZK = {"CZK": 1.0, "EUR": 25.0, "USD": 23.0, "GBP": 29.0}
+    
+    def to_czk(amount: float, currency: str) -> float:
+        """Convert amount to CZK using fixed rates."""
+        return amount * FX_TO_CZK.get((currency or "CZK").upper(), 23.0)
+    
+    # Fetch subscription details
+    sub_result = await db.execute(
+        select(Subscription).where(Subscription.id == subscription_id)
+    )
+    sub = sub_result.scalar_one_or_none()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    
+    # Fetch all events for this subscription, ordered by date descending
+    events_result = await db.execute(
+        select(SubscriptionEvent)
+        .where(SubscriptionEvent.subscription_id == subscription_id)
+        .order_by(SubscriptionEvent.event_date.desc())
+    )
+    events = events_result.scalars().all()
+    
+    # Fetch all financial records for this subscription, ordered by date descending
+    records_result = await db.execute(
+        select(FinancialRecord)
+        .where(FinancialRecord.matched_subscription_id == subscription_id)
+        .order_by(FinancialRecord.date.desc())
+    )
+    records = records_result.scalars().all()
+    
+    # Build transactions array with bank confirmation
+    transactions = []
+    total_czk = 0.0
+    
+    for event in events:
+        event_month = event.event_date.strftime("%Y-%m") if event.event_date else None
+        bank_confirmed = False
+        bank_amount = None
+        bank_payee = None
+        bank_account = None
+        note = None
+        
+        # Try to find a matching financial record
+        for record in records:
+            record_month = record.date.strftime("%Y-%m") if record.date else None
+            
+            # Month must match
+            if event_month != record_month:
+                continue
+            
+            # Check amount tolerance
+            event_amount = event.amount or 0.0
+            record_amount = abs(record.amount or 0.0)
+            
+            if event_amount == 0.0:
+                # No event amount: any record in same month = confirmed
+                bank_confirmed = True
+                bank_amount = record_amount
+                bank_payee = record.payee
+                bank_account = record.account_name
+                note = record.note
+                break
+            else:
+                # Amount tolerance: within 30%
+                tolerance = abs(record_amount - event_amount) / max(event_amount, 1)
+                if tolerance <= 0.30:
+                    bank_confirmed = True
+                    bank_amount = record_amount
+                    bank_payee = record.payee
+                    bank_account = record.account_name
+                    note = record.note
+                    break
+        
+        # Convert amount to CZK
+        amount_czk = to_czk(event.amount, event.currency)
+        total_czk += amount_czk
+        
+        transactions.append({
+            "date": event.event_date.strftime("%Y-%m-%d") if event.event_date else None,
+            "amount": event.amount,
+            "currency": event.currency,
+            "amount_czk": round(amount_czk, 2),
+            "mailbox": event.mailbox,
+            "source_type": event.source_type,
+            "bank_confirmed": bank_confirmed,
+            "bank_amount": round(bank_amount, 2) if bank_amount else None,
+            "bank_payee": bank_payee,
+            "bank_account": bank_account,
+            "note": note,
+        })
+    
+    # Calculate date range
+    date_range_start = None
+    date_range_end = None
+    if transactions:
+        date_range_start = transactions[-1]["date"]  # Last in list (oldest)
+        date_range_end = transactions[0]["date"]      # First in list (newest)
+    
+    return {
+        "subscription_id": subscription_id,
+        "service_name": sub.service_name,
+        "total_events": len(transactions),
+        "total_czk": round(total_czk, 2),
+        "date_range_start": date_range_start,
+        "date_range_end": date_range_end,
+        "transactions": transactions,
+    }
+
+
+@app.post("/api/admin/reset-batch-table")
+async def reset_batch_table(db: AsyncSession = Depends(get_db)):
+    """Drop and recreate batch_processes with the current schema. One-time use."""
+    from sqlalchemy import text
+    from database import init_db
+    await db.execute(text("DROP TABLE IF EXISTS batch_processes"))
+    await db.commit()
+    await init_db()
+    return {"status": "ok", "message": "batch_processes dropped and recreated"}
 # ============================================================================
 # Mount Frontend Static Files (AFTER all API routes to avoid route capture)
 # Prefer frontend/ (simple UI with wallet features), fall back to glass dist.

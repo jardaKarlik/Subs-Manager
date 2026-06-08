@@ -161,6 +161,23 @@ th{cursor:pointer;user-select:none}
 .state-row td{text-align:center;padding:32px 14px;color:var(--text-mute);letter-spacing:1px;font-size:11px}
 .spinner{display:inline-block;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* ── Transaction Modal Styles ── */
+#txn-modal{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+#txn-modal.open{display:flex}
+.txn-box{width:90%;max-width:860px;max-height:85vh;border:1px solid var(--yellow);background:var(--bg);display:flex;flex-direction:column}
+.txn-scroll{flex:1;overflow-y:auto}
+table.txn-tbl{width:100%;border-collapse:collapse;font-size:12px}
+table.txn-tbl th{position:sticky;top:0;background:var(--bg);padding:8px 12px;text-align:left;font-size:10px;letter-spacing:1.4px;color:var(--text-dim);text-transform:uppercase;border-bottom:1px solid var(--hairline-strong)}
+table.txn-tbl td{padding:8px 12px;border-bottom:1px dashed var(--hairline);vertical-align:middle}
+table.txn-tbl tr:hover td{background:rgba(255,230,0,0.03)}
+.txn-src{font-size:10px;letter-spacing:1px;padding:2px 6px;border-radius:2px}
+.txn-src-gmail{background:rgba(234,67,53,0.15);color:#ea4335}
+.txn-src-outlook{background:rgba(0,114,239,0.15);color:#0072ef}
+.txn-src-imap{background:rgba(95,227,154,0.15);color:var(--green)}
+.txn-src-unknown{background:rgba(138,138,142,0.15);color:var(--text-mute)}
+.txn-bank-yes{color:var(--green);font-size:14px}
+.txn-bank-no{color:var(--text-mute);font-size:14px}
+.txn-foot{border-top:1px solid var(--yellow);background:var(--yellow-soft);padding:8px 14px;display:flex;gap:24px;font-size:11px}
 @media(max-width:1080px){.grid{grid-template-columns:1fr}.col-right{grid-template-rows:none}.pane--burn{min-height:260px}}
 @media(max-width:560px){.bar-top{flex-wrap:wrap}.bar-top .meta{order:3;flex-basis:100%;border-top:1px solid var(--yellow)}table.reg .c-plan,table.reg .c-since{display:none}}
 </style>
@@ -277,6 +294,42 @@ th{cursor:pointer;user-select:none}
     <span class="spacer"></span>
     <span>● CONN · TLS1.3 · AES-256</span>
     <span class="ready" id="bot-ready">READY_</span>
+
+  <!-- Transaction Modal -->
+  <div id="txn-modal">
+    <div class="txn-box">
+      <div class="pane-rule" style="border-bottom:1px solid var(--yellow);padding:8px 12px">
+        <span>▸ TRANSACTIONS · <span id="txn-modal-title">SERVICE NAME</span></span>
+        <button onclick="closeTransactionModal()" style="margin-left:auto;background:none;border:none;color:var(--yellow);cursor:pointer;font-family:var(--mono);font-size:14px">✕</button>
+      </div>
+      <div style="padding:12px;border-bottom:1px solid var(--hairline-strong);display:flex;gap:20px;font-size:10px;letter-spacing:1.2px">
+        <span>EVENTS: <strong id="txn-summary-events">--</strong></span>
+        <span>TOTAL: <strong id="txn-summary-total">--</strong> CZK</span>
+        <span>RANGE: <strong id="txn-summary-range">--</strong></span>
+      </div>
+      <div class="txn-scroll">
+        <table class="txn-tbl">
+          <thead>
+            <tr>
+              <th style="width:5%">#</th>
+              <th style="width:15%">DATE</th>
+              <th style="width:12%">AMOUNT</th>
+              <th style="width:12%">MAILBOX</th>
+              <th style="width:12%">BANK REC</th>
+              <th style="width:44%">PAYEE / NOTE</th>
+            </tr>
+          </thead>
+          <tbody id="txn-tbody">
+            <tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-mute)">LOADING…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="txn-foot">
+        <span>TOTAL: <strong id="txn-foot-total">-- CZK</strong></span>
+      </div>
+    </div>
+  </div>
+
   </footer>
 </main>
 
@@ -456,9 +509,11 @@ function logoHtml(sub, size) {
 
   const id = 'logo_' + sub.id;
   const candsJson = JSON.stringify(cands);
-  return `<span class="${sizeClass}" style="background:#fff"
+  const escapedServiceName = sub.service_name.replace(/'/g, "\\'");
+  return `<span class="${sizeClass}" style="background:#fff;cursor:pointer"
     id="${id}"
-    data-fb-bg="${fallbackBg}" data-fb-fg="${fallbackFg}" data-mono="${m}" data-fs="${monoFs}">
+    data-fb-bg="${fallbackBg}" data-fb-fg="${fallbackFg}" data-mono="${m}" data-fs="${monoFs}"
+    onclick="openTransactionModal(${sub.id}, '${escapedServiceName}')">
     <img width="${px}" height="${px}"
       data-cands="${candsJson.replace(/"/g, '&quot;')}" data-idx="0"
       src="${cands[0]}"
@@ -753,6 +808,118 @@ async function renderStats() {
 
 function sortBy(key){sortDir=sortKey===key?(sortDir==='desc'?'asc':'desc'):'desc';sortKey=key;renderTable();}
 function setFilter(f,btn){activeFilter=f;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTable();}
+
+/* ── Transaction Modal Functions ── */
+async function openTransactionModal(subId, serviceName) {
+  const modal = document.getElementById('txn-modal');
+  const title = document.getElementById('txn-modal-title');
+  const tbody = document.getElementById('txn-tbody');
+  const summary = document.getElementById('txn-summary-events');
+  const summaryTotal = document.getElementById('txn-summary-total');
+  const summaryRange = document.getElementById('txn-summary-range');
+  const footTotal = document.getElementById('txn-foot-total');
+  
+  // Show modal with loading state
+  modal.classList.add('open');
+  title.textContent = serviceName.toUpperCase();
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-mute)"><span class="spinner">⟳</span> LOADING…</td></tr>';
+  summary.textContent = '--';
+  summaryTotal.textContent = '--';
+  summaryRange.textContent = '--';
+  footTotal.textContent = '-- CZK';
+  
+  try {
+    const response = await fetch(`${API}/api/subscriptions/${subId}/transactions`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    renderTransactionModal(data);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--orange)">⚠ ERROR: ${err.message}</td></tr>`;
+  }
+}
+
+function renderTransactionModal(data) {
+  const tbody = document.getElementById('txn-tbody');
+  const summary = document.getElementById('txn-summary-events');
+  const summaryTotal = document.getElementById('txn-summary-total');
+  const summaryRange = document.getElementById('txn-summary-range');
+  const footTotal = document.getElementById('txn-foot-total');
+  
+  const txns = data.transactions || [];
+  summary.textContent = data.total_events;
+  summaryTotal.textContent = (data.total_czk || 0).toFixed(0);
+  footTotal.textContent = (data.total_czk || 0).toFixed(0) + ' CZK';
+  
+  if (data.date_range_start && data.date_range_end) {
+    const start = new Date(data.date_range_start);
+    const end = new Date(data.date_range_end);
+    const days = Math.floor((end - start) / (1000 * 60 * 60 * 24));
+    summaryRange.textContent = days > 0 ? `${days} DAYS` : 'TODAY';
+  }
+  
+  if (txns.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-mute)">NO TRANSACTIONS</td></tr>';
+    return;
+  }
+  
+  const rows = txns.map((txn, idx) => {
+    // Format mailbox source
+    let mailboxHtml = '—';
+    if (txn.mailbox) {
+      const srcClass = `txn-src txn-src-${txn.mailbox.toLowerCase()}`;
+      mailboxHtml = `<span class="${srcClass}">${txn.mailbox.toUpperCase()}</span>`;
+    }
+    
+    // Format bank confirmation
+    let bankHtml = `<span class="txn-bank-no">—</span>`;
+    if (txn.bank_confirmed) {
+      bankHtml = `<span class="txn-bank-yes">✓</span>`;
+      if (txn.bank_payee || txn.bank_account) {
+        const tooltip = [txn.bank_payee, txn.bank_account].filter(x=>x).join(' · ');
+        bankHtml = `<span class="txn-bank-yes" title="${tooltip}">✓</span>`;
+      }
+    }
+    
+    // Payee/note
+    let payeeHtml = '—';
+    if (txn.bank_confirmed && txn.bank_payee) {
+      payeeHtml = txn.bank_payee;
+      if (txn.note) payeeHtml += ` · ${txn.note}`;
+    }
+    
+    return `<tr>
+      <td>${idx + 1}</td>
+      <td>${txn.date ? txn.date.slice(0, 7) : '—'}</td>
+      <td>${(txn.amount_czk || 0).toFixed(0)} CZK</td>
+      <td>${mailboxHtml}</td>
+      <td style="text-align:center">${bankHtml}</td>
+      <td>${payeeHtml}</td>
+    </tr>`;
+  }).join('');
+  
+  tbody.innerHTML = rows;
+}
+
+function closeTransactionModal() {
+  const modal = document.getElementById('txn-modal');
+  modal.classList.remove('open');
+}
+
+// Close modal on overlay click (not on box click)
+document.addEventListener('DOMContentLoaded', function() {
+  const modal = document.getElementById('txn-modal');
+  if (modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) closeTransactionModal();
+    });
+  }
+  // Close on Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('open')) {
+      closeTransactionModal();
+    }
+  });
+});
 
 async function triggerSync() {
   const btn=document.getElementById('btn-sync');

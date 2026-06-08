@@ -488,7 +488,7 @@ class EmailFetcher:
                             email_date = parser.parse(raw_date)
                     except Exception: pass
 
-                    event = SubscriptionEvent(subscription_id=subscription_id, service_name=classification["service_name"], category=classification["category"], amount=classification["cost"], currency=classification["currency"], billing_cycle=classification["billing_cycle"], event_date=email_date, source_type=classification["source_type"], message_id=email["_unique_id"])
+                    event = SubscriptionEvent(subscription_id=subscription_id, service_name=classification["service_name"], category=classification["category"], amount=classification["cost"], currency=classification["currency"], billing_cycle=classification["billing_cycle"], event_date=email_date, source_type=classification["source_type"], mailbox=source, message_id=email["_unique_id"])
                     db.add(event)
 
                     email_text = f"{email.get('subject', '')} {email.get('body', '')}".lower()

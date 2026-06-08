@@ -170,6 +170,7 @@ class SubscriptionEvent(Base):
     billing_cycle: Mapped[str] = mapped_column(String(20), default="monthly")
     event_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     source_type: Mapped[str] = mapped_column(String(50), default="email")
+    mailbox: Mapped[str] = mapped_column(String(50), nullable=True)
     message_id: Mapped[str] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -184,6 +185,7 @@ class SubscriptionEvent(Base):
             "billing_cycle": self.billing_cycle,
             "event_date": self.event_date.isoformat() if self.event_date else None,
             "source_type": self.source_type,
+            "mailbox": self.mailbox,
             "message_id": self.message_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
