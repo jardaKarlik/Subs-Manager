@@ -1,0 +1,16 @@
+.git
+.env
+.venv
+venv
+__pycache__
+*.pyc
+*.db
+*.sqlite
+*.sqlite3
+.cline
+.claude
+.vscode
+.idea
+node_modules
+discovery_output
+docs
