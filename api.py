@@ -1075,7 +1075,6 @@ async def match_wallet():
     matcher = SubscriptionMatcher()
     try:
         match_result = await matcher.match_all()
-        cycle_result = await matcher.infer_billing_cycles()
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1084,7 +1083,7 @@ async def match_wallet():
             status_code=500,
             content={"status": "error", "detail": str(e), "trace": traceback.format_exc().splitlines()[-5:]}
         )
-    return {"status": "ok", **match_result, **cycle_result}
+    return {"status": "ok", **match_result}
 
 
 @app.get("/api/wallet-candidates")
@@ -1357,11 +1356,44 @@ async def get_sync_status(db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/recalculate-costs")
 async def recalculate_costs(db: AsyncSession = Depends(get_db)):
-    from email_fetcher import _recalculate_costs
-    from subscription_matcher import SubscriptionMatcher
-    updated = await _recalculate_costs(db)
-    service_rows = await SubscriptionMatcher().update_service_costs()
-    return {"status": "ok", "cost_rows_updated": updated, "service_cost_rows": service_rows}
+    """
+    Recalculate subscription costs from SubscriptionEvent records.
+    For each subscription, takes the most recent non-zero event amount as cost.
+    """
+    from database import SubscriptionEvent
+    from sqlalchemy import func as sqlfunc
+
+    subs_result = await db.execute(select(Subscription))
+    subs = subs_result.scalars().all()
+    updated = 0
+
+    FX_TO_CZK = {"CZK": 1.0, "EUR": 25.0, "USD": 23.0, "GBP": 29.0}
+
+    for sub in subs:
+        events_result = await db.execute(
+            select(SubscriptionEvent)
+            .where(SubscriptionEvent.subscription_id == sub.id)
+            .where(SubscriptionEvent.amount > 0)
+            .order_by(SubscriptionEvent.event_date.desc())
+            .limit(3)
+        )
+        events = events_result.scalars().all()
+        if not events:
+            continue
+        # Use most recent non-zero event amount
+        latest = events[0]
+        new_cost = round(abs(latest.amount or 0), 2)
+        new_currency = latest.currency or "CZK"
+        new_cycle = latest.billing_cycle or sub.billing_cycle or "monthly"
+        if new_cost > 0 and (sub.cost != new_cost or sub.currency != new_currency):
+            sub.cost = new_cost
+            sub.currency = new_currency
+            sub.billing_cycle = new_cycle
+            sub.updated_at = datetime.utcnow()
+            updated += 1
+
+    await db.commit()
+    return {"status": "ok", "cost_rows_updated": updated}
 
 
 @app.post("/api/admin/reset-db")
@@ -1388,14 +1420,9 @@ async def start_backfill(background_tasks: BackgroundTasks, since_days: int = 10
                 )
             log.info(f"Backfill done: {results}")
             from subscription_matcher import SubscriptionMatcher
-            from email_fetcher import _recalculate_costs
-            from database import AsyncSessionLocal
             match_result = await SubscriptionMatcher().match_all()
             log.info(f"Match done: {match_result}")
-            async with AsyncSessionLocal() as db:
-                await _recalculate_costs(db)
-            await SubscriptionMatcher().update_service_costs()
-            log.info("Recalculate done")
+            log.info("Backfill and match complete")
         except Exception as e:
             log.error(f"Backfill error: {e}", exc_info=True)
     background_tasks.add_task(_run)
