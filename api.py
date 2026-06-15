@@ -388,7 +388,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         # in subscription_matcher.py — keep in sync)
         sub_cats = [
             'Software, apps, games', 'Tv, streaming',
-            'Books, audio, subscription', 'Internet', 'Music', 'Hobbies',
+            'Books, audio, subscription', 'Internet', 'Music',
         ]
 
         # Current calendar month (day 1 to now), subscription categories only

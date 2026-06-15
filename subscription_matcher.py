@@ -7,7 +7,7 @@ Key rules:
      We keep only the bank card record. PayPal-sourced records are skipped in all
      spend calculations.
   2. Category filter: only records in subscription-relevant wallet categories
-     (Software/apps, TV/streaming, Books/subscriptions, Internet, Music, Hobbies)
+     (Software/apps, TV/streaming, Books/subscriptions, Internet, Music)
      are considered for matching and spend calculations.
   3. Payee blocklist: empty payees and numeric-only / bank-account-number payees
      are never matched to a subscription.
@@ -40,8 +40,27 @@ SUBSCRIPTION_CATEGORIES = {
     'books, audio, subscription',
     'internet',
     'music',
-    'hobbies',
+    # Remove 'hobbies' — too broad, catches airline tickets, one-time purchases
 }
+
+# Payee strings that must NEVER be matched to a subscription via wallet matching.
+# These are airlines, marketplaces, payment gateways, and one-time purchase services.
+WALLET_MATCH_BLOCKLIST = {
+    'klm', 'klm-info', 'klm-mail', 'klm mail', 'klm info',
+    'flyingblue', 'info-flyingblue', 'koninklijke luchtvaart',
+    'ryanair', 'wizzair', 'wizz air', 'easyjet',
+    'aukro', 'aukro.cz',
+    'comgate', 'comgate.cz',
+    'milkroad',
+    'booking.com', 'airbnb',
+}
+
+# Additional payee-name-level blocklist: reject records whose payee_name matches
+# airline/travel/marketplace patterns even if category slips through.
+PAYEE_NEVER_MATCH = re.compile(
+    r'\b(klm|ryanair|wizz|easyjet|lufthansa|emirates|booking\.com|airbnb'
+    r'|aukro|milkroad|comgate|asfinag)\b', re.I
+)
 
 # Payee fragments that indicate a PayPal intermediary record — skip these
 PAYPAL_PAYEE_PATTERNS = [
@@ -208,6 +227,22 @@ class SubscriptionMatcher:
 
                 if not _is_subscription_record(rec):
                     filtered += 1
+                    continue
+
+                # === WALLET_MATCH_BLOCKLIST check ===
+                # If the payee normalized name contains any token from the blocklist,
+                # skip this record entirely — these are airlines, marketplaces, etc.
+                payee_lower = (rec.payee or '').lower()
+                payee_tokens = set(re.split(r'[\s,;|]+', payee_lower))
+                if payee_tokens & WALLET_MATCH_BLOCKLIST:
+                    skipped += 1
+                    continue
+
+                # === PAYEE_NEVER_MATCH check ===
+                # Reject records whose payee_name matches airline/travel/marketplace
+                # patterns even if the category filter didn't catch them.
+                if PAYEE_NEVER_MATCH.search(payee_lower):
+                    skipped += 1
                     continue
 
                 sub = _match_payee_to_subscription(rec.payee or '', subs)
