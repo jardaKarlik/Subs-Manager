@@ -1019,6 +1019,11 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
         .where(FinancialRecord.matched_subscription_id != None)  # noqa: E711
         .order_by(FinancialRecord.matched_subscription_id, FinancialRecord.date)
     )
+    from datetime import datetime, timedelta
+    now_dt = datetime.utcnow()
+    cutoff_30 = now_dt - timedelta(days=30)
+    cutoff_60 = now_dt - timedelta(days=60)
+
     subs: dict = {}
     for r in rows.all():
         sid = r.matched_subscription_id
@@ -1031,6 +1036,8 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
                 "currency": r.currency,
                 "dates": [],
                 "_by_month": {},
+                "_last_30_czk": 0.0,
+                "_prev_30_czk": 0.0,
             }
         if (r.amount or 0) < 0:
             amt = abs(r.amount)
@@ -1038,6 +1045,11 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
             czk = amt * fx
             subs[sid]["total_czk"] += czk
             subs[sid]["payments"] += 1
+            if r.date:
+                if cutoff_30 <= r.date <= now_dt:
+                    subs[sid]["_last_30_czk"] += czk
+                elif cutoff_60 <= r.date < cutoff_30:
+                    subs[sid]["_prev_30_czk"] += czk
             month = r.date.isoformat()[:7] if r.date else None
             if month:
                 subs[sid]["_by_month"][month] = subs[sid]["_by_month"].get(month, 0.0) + czk
@@ -1047,7 +1059,19 @@ async def wallet_spend_map(db: AsyncSession = Depends(get_db)):
         v["total_czk"] = round(v["total_czk"], 2)
         monthly_vals = list(v["_by_month"].values())
         v["avg_monthly_czk"] = round(sum(monthly_vals) / len(monthly_vals), 2) if monthly_vals else 0.0
+        
+        last_30 = v["_last_30_czk"]
+        prev_30 = v["_prev_30_czk"]
+        if prev_30 > 0:
+            v["change_pct"] = round(((last_30 - prev_30) / prev_30) * 100, 1)
+        elif last_30 > 0:
+            v["change_pct"] = 100.0
+        else:
+            v["change_pct"] = 0.0
+            
         del v["_by_month"]
+        del v["_last_30_czk"]
+        del v["_prev_30_czk"]
     return {"map": subs}
 
 

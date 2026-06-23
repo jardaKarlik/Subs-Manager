@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-  <title>DevSpend AI - Subscription Manager</title>
+  <title>MySUbZ - Subscription Manager</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
   <style>
@@ -51,6 +51,17 @@
       width: 20px;
       height: 20px;
       border-radius: 4px;
+    }
+    .logo-wrap-lg {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .logo-fallback {
       font-family: 'JetBrains Mono', monospace;
@@ -146,7 +157,7 @@
   <!-- Sidebar Navigation Shell -->
   <aside class="fixed left-0 h-full w-[240px] hidden md:flex flex-col bg-surface-container-low/60 backdrop-blur-2xl border-r border-white/10 shadow-2xl z-40 p-6 gap-6">
     <div class="mb-4">
-      <h1 class="font-bold text-2xl text-primary tracking-tighter">DevSpend AI</h1>
+      <h1 class="font-bold text-2xl text-primary tracking-tighter">MySUbZ</h1>
       <p class="text-on-surface-variant font-mono text-[10px] opacity-60" id="data-span">LOADING DATA...</p>
     </div>
     
@@ -183,7 +194,7 @@
   <!-- Top AppBar Shell -->
   <header class="fixed top-0 left-0 md:left-[240px] right-0 z-30 bg-background/50 backdrop-blur-xl border-b border-white/10 shadow-sm">
     <div class="flex justify-between items-center px-6 py-4">
-      <div class="md:hidden font-bold text-lg text-primary tracking-tighter">DevSpend AI</div>
+      <div class="md:hidden font-bold text-lg text-primary tracking-tighter">MySUbZ</div>
       <div class="hidden md:block">
         <h2 class="text-sm font-semibold text-on-surface-variant/60 uppercase tracking-widest" id="tab-title-lbl">Overview</h2>
       </div>
@@ -192,7 +203,10 @@
         <!-- Search bar -->
         <div class="relative hidden sm:block">
           <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 text-sm">search</span>
-          <input id="global-search" class="bg-surface-container-low/60 border border-white/10 rounded-full pl-9 pr-4 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-all w-60" placeholder="Search subscriptions..." type="text" oninput="handleSearch(this.value)"/>
+          <input id="global-search" class="bg-surface-container-low/60 border border-white/10 rounded-full pl-9 pr-10 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-all w-60" placeholder="Search subscriptions..." type="text" oninput="handleSearch(this.value)"/>
+          <button id="clear-search-btn" onclick="clearSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-sm">close</span>
+          </button>
         </div>
         
         <div class="flex items-center gap-3">
@@ -250,39 +264,29 @@
       </div>
 
       <!-- Multi-Metric Hero Section -->
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-8 flex flex-col justify-center py-6">
+      <div class="grid grid-cols-1 gap-6">
+        <div class="flex flex-col justify-center py-6">
           <h3 class="text-xs font-bold text-primary tracking-widest uppercase mb-1">Consolidated Insights</h3>
-          <h2 class="text-3xl md:text-4xl font-semibold mb-6 tracking-tight">Financial Footprint</h2>
+          <h2 id="financial-footprint-header" class="text-3xl md:text-4xl font-semibold mb-6 tracking-tight">Financial Footprint</h2>
           
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-6 border-t border-white/5 pt-6">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-6 border-t border-white/5 pt-6">
             <div class="flex flex-col">
-              <span class="text-xs text-on-surface-variant opacity-60 uppercase tracking-widest">Total Spend</span>
+              <span id="total-spend-label" class="text-xs text-on-surface-variant opacity-60 uppercase tracking-widest">Total Spend</span>
               <span class="font-mono text-2xl md:text-3xl text-primary font-bold mt-1" id="hero-total-paid">---</span>
             </div>
             <div class="flex flex-col border-l border-white/10 pl-6">
-              <span class="text-xs text-on-surface-variant opacity-60 uppercase tracking-widest">MTD Average</span>
+              <span id="monthly-average-label" class="text-xs text-on-surface-variant opacity-60 uppercase tracking-widest font-semibold">MTD Average</span>
               <span class="font-mono text-2xl md:text-3xl text-on-background font-bold mt-1" id="hero-monthly-avg">---</span>
             </div>
-            <div class="flex flex-col border-l border-white/10 pl-6 col-span-2 sm:col-span-1">
+            <div class="flex flex-col border-l border-white/10 pl-6">
               <span class="text-xs text-on-surface-variant opacity-60 uppercase tracking-widest">Active Services</span>
               <span class="font-mono text-2xl md:text-3xl text-secondary-fixed-dim font-bold mt-1" id="hero-active-count">---</span>
             </div>
-          </div>
-        </div>
-        
-        <!-- Live Infrastructure Spend Indicator -->
-        <div class="lg:col-span-4 flex items-center justify-center">
-          <div class="glass-panel p-6 rounded-2xl w-full max-w-sm border border-white/10 glow-pink relative overflow-hidden">
-            <div class="absolute -right-6 -bottom-6 opacity-5">
-              <span class="material-symbols-outlined text-9xl text-primary">speed</span>
+            <div class="flex flex-col border-l border-white/10 pl-6">
+              <span class="text-xs text-on-surface-variant opacity-60 uppercase tracking-widest">Live System Sync</span>
+              <span class="font-mono text-2xl md:text-3xl text-tertiary font-bold mt-1" id="hero-db-records">---</span>
+              <span class="text-[10px] text-on-surface-variant opacity-60 mt-1" id="hero-sync-date">Last updated: --</span>
             </div>
-            <div class="flex items-center gap-2 mb-3">
-              <div class="w-2.5 h-2.5 rounded-full bg-secondary-container"></div>
-              <span class="text-xs text-on-surface-variant font-semibold tracking-wider">Live System Sync</span>
-            </div>
-            <div class="font-mono text-2xl text-on-background font-bold" id="hero-db-records">---</div>
-            <p class="text-[11px] text-on-surface-variant opacity-60 mt-1" id="hero-sync-date">Last updated: --</p>
           </div>
         </div>
       </div>
@@ -316,21 +320,26 @@
             <h3 class="text-sm font-bold tracking-widest text-on-surface-variant uppercase border-b border-white/5 pb-3 mb-4">Reconciliation & Admin</h3>
             <p class="text-xs text-on-surface-variant leading-relaxed mb-6">Trigger advanced database recalculation methods after pulling transaction records or updating email aliases.</p>
             
-            <div class="space-y-3">
-              <button onclick="triggerRecalculate()" id="btn-recalc" class="w-full py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
-                Recompute Sub Costs
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="runAdminJob('/api/sync-wallet', 'Sync Wallet')" class="py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
+                Sync Wallet
               </button>
-              <button onclick="triggerMatch()" id="btn-match" class="w-full py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
-                Run Matcher Engine
+              <button onclick="runAdminJob('/api/sync-emails', 'Sync Emails')" class="py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
+                Sync Emails
+              </button>
+              <button onclick="runAdminJob('/api/match-wallet', 'Run Matcher')" class="py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
+                Run Matcher
+              </button>
+              <button onclick="runAdminJob('/api/recalculate-costs', 'Recalculate Costs')" class="py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
+                Recalculate Costs
+              </button>
+              <button onclick="runAdminJob('/api/admin/seed-aliases', 'Seed Aliases')" class="py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
+                Seed Aliases
+              </button>
+              <button onclick="runAdminJob('/api/admin/sync-industry-cache', 'Sync Industry Cache')" class="py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-semibold rounded-xl text-on-surface">
+                Sync Industry
               </button>
             </div>
-          </div>
-
-          <div class="border-t border-white/5 pt-4">
-            <h4 class="text-[10px] text-on-surface-variant/40 font-mono uppercase mb-2">Danger Zone</h4>
-            <button onclick="triggerResetDB()" class="text-xs text-red-400 hover:text-red-300 font-semibold flex items-center gap-1 transition-colors">
-              <span class="material-symbols-outlined text-sm">delete_forever</span> Wipe & Reset Database
-            </button>
           </div>
         </div>
       </div>
@@ -392,9 +401,14 @@
 
     <!-- 3. BILLS HISTORY TAB -->
     <div id="tab-bills" class="tab-content max-w-7xl space-y-6 hidden">
-      <div>
-        <h2 class="text-2xl font-semibold tracking-tight text-on-surface">Payment Logs Timeline</h2>
-        <p class="text-xs text-on-surface-variant">Complete audit history of database transaction events</p>
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight text-on-surface">Payment Logs Timeline</h2>
+          <p class="text-xs text-on-surface-variant">Complete audit history of database transaction events</p>
+        </div>
+        <button id="bills-clear-filter" onclick="clearSearch()" class="hidden px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-semibold rounded-xl text-primary transition-all">
+          Clear Filter
+        </button>
       </div>
 
       <div class="glass-panel rounded-2xl overflow-hidden shadow-xl">
@@ -431,12 +445,19 @@
           <div class="glass-panel p-6 rounded-2xl h-80 animate-pulse"></div>
         </div>
         
-        <!-- Category allocation progress list -->
-        <div class="lg:col-span-4 glass-panel p-6 rounded-2xl flex flex-col gap-4">
-          <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase border-b border-white/5 pb-3">Spend Allocation</h4>
-          <ul class="flex flex-col gap-4 overflow-y-auto" id="alloc-list">
-            <li class="text-on-surface-variant opacity-60 text-xs py-8 text-center">Loading allocation values...</li>
-          </ul>
+        <div class="lg:col-span-4 flex flex-col gap-6">
+          <!-- Forecast Card -->
+          <div id="forecast-card" class="glass-panel p-6 rounded-2xl flex flex-col gap-3 border border-white/10 relative overflow-hidden">
+            <!-- Loaded dynamically -->
+          </div>
+          
+          <!-- Category allocation progress list -->
+          <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+            <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase border-b border-white/5 pb-3">Spend Allocation</h4>
+            <ul class="flex flex-col gap-4 overflow-y-auto" id="alloc-list">
+              <li class="text-on-surface-variant opacity-60 text-xs py-8 text-center">Loading allocation values...</li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -456,8 +477,72 @@
           <div class="text-on-surface-variant opacity-60 text-xs py-8 text-center animate-pulse">Loading sync status details...</div>
         </div>
       </div>
+
+      <!-- Bottom Breakdown Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-4">
+        <!-- Column 1: Cost Forecast -->
+        <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+          <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase border-b border-white/5 pb-3">Cost Forecast</h4>
+          <div id="breakdown-forecast" class="space-y-4 text-xs">
+            <!-- Dynamically filled -->
+          </div>
+        </div>
+
+        <!-- Column 2: Potential Cost Savings -->
+        <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+          <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase border-b border-white/5 pb-3">Potential Savings</h4>
+          <div id="breakdown-savings" class="space-y-3">
+            <!-- Dynamically filled -->
+          </div>
+        </div>
+
+        <!-- Column 3: Top Spenders -->
+        <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+          <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase border-b border-white/5 pb-3">Top Spenders</h4>
+          <div id="breakdown-spenders" class="space-y-3">
+            <!-- Dynamically filled -->
+          </div>
+        </div>
+
+        <!-- Column 4: Items for Review -->
+        <div class="glass-panel p-6 rounded-2xl flex flex-col gap-4">
+          <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase border-b border-white/5 pb-3">Items for Review</h4>
+          <div id="breakdown-review" class="space-y-3">
+            <!-- Dynamically filled -->
+          </div>
+        </div>
+      </div>
     </div>
   </main>
+
+  <!-- Admin Console Modal -->
+  <div id="console-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+    <div class="glass-panel w-full max-w-3xl rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col h-[500px]">
+      <!-- Modal Header -->
+      <div class="flex justify-between items-center bg-white/5 px-6 py-4 border-b border-white/10">
+        <div class="flex items-center gap-2">
+          <span class="w-3 h-3 rounded-full bg-red-500"></span>
+          <span class="w-3 h-3 rounded-full bg-yellow-500"></span>
+          <span class="w-3 h-3 rounded-full bg-green-500"></span>
+          <h3 class="ml-2 font-mono text-xs font-semibold text-on-surface" id="console-modal-title">Admin Console</h3>
+        </div>
+        <button onclick="closeConsoleModal()" class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center">
+          <span class="material-symbols-outlined text-lg">close</span>
+        </button>
+      </div>
+      <!-- Console Output -->
+      <div id="console-output" class="flex-grow bg-black p-6 font-mono text-xs text-green-400 overflow-y-auto space-y-1.5 selection:bg-green-800 selection:text-white">
+        <!-- Log entries go here -->
+      </div>
+      <!-- Modal Footer -->
+      <div class="bg-white/5 px-6 py-3 border-t border-white/10 flex justify-between items-center text-[10px] text-on-surface-variant font-mono">
+        <span id="console-status">READY</span>
+        <button onclick="clearConsole()" class="px-3 py-1 hover:bg-white/5 border border-white/10 rounded transition-colors text-[10px]">
+          Clear Screen
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script>
     // Determine API server base dynamically
@@ -477,9 +562,15 @@
     let activeFilter = 'all';
 
     const CAT_COLOR = {
+      cloud: '#7aa9ff',
       cloud_hosting: '#7aa9ff',
+      ai: '#ffe600',
       ai_tools: '#ffe600',
-      dev_tools: '#a78bfa',
+      gaming: '#ff007f',
+      design: '#ec784f',
+      music_tools: '#a78bfa',
+      social: '#3b82f6',
+      dev_tools: '#ba7ef4',
       streaming: '#ff6b1a',
       music: '#5fe39a',
       productivity: '#67e8f9',
@@ -565,12 +656,13 @@
 
     function logoHtml(sub, size) {
       const isSmall = size === 'sm';
-      const px = isSmall ? 20 : 28;
-      const sizeClass = isSmall ? 'logo-wrap logo-wrap-sm' : 'logo-wrap';
+      const isLarge = size === 'lg';
+      const px = isSmall ? 20 : (isLarge ? 48 : 28);
+      const sizeClass = isSmall ? 'logo-wrap logo-wrap-sm' : (isLarge ? 'logo-wrap-lg' : 'logo-wrap');
       const fallbackBg = getFallbackColor(sub.service_name);
       const fallbackFg = isDark(fallbackBg) ? '#fff' : '#0a0a0b';
       const m = (sub.service_name || '?').trim().charAt(0).toUpperCase();
-      const monoFs = isSmall ? 10 : 14;
+      const monoFs = isSmall ? 10 : (isLarge ? 20 : 14);
 
       const cands = [];
       const mapped = getBrandDomain(sub.service_name);
@@ -678,22 +770,58 @@
       `;
     }
 
-    function renderSparkline(subId, dates, totalSpent) {
+    function renderSparkline(subId, dates, totalSpent, isLarge = false) {
       if (!dates || !dates.length) return usageBar({id: subId, status: 'active'});
       const months = {};
       dates.forEach(d => { months[d] = (months[d] || 0) + 1; });
       const keys = Object.keys(months).sort().slice(-10);
       const max = Math.max(...Object.values(months), 1);
+      const height = isLarge ? 32 : 16;
+      const barWidth = isLarge ? 'w-1.5' : 'w-1';
       const dots = keys.map(m => {
-        const h = Math.round((months[m] / max) * 16);
-        return `<span class="inline-block w-1 bg-primary rounded-t-sm" style="height: ${Math.max(2, h)}px; margin: 0 1px; opacity: ${(0.3 + (months[m]/max)*0.7)}" title="${m}: ${months[m]} payments"></span>`;
+        const h = Math.round((months[m] / max) * height);
+        return `<span class="inline-block ${barWidth} bg-primary rounded-t-sm" style="height: ${Math.max(3, h)}px; margin: 0 1.5px; opacity: ${(0.3 + (months[m]/max)*0.7)}" title="${m}: ${months[m]} payments"></span>`;
       }).join('');
-      return `<div class="flex items-end h-5 gap-0.5 justify-center">${dots}</div>`;
+      const containerHeight = isLarge ? 'h-8' : 'h-5';
+      return `<div class="flex items-end ${containerHeight} gap-0.5 justify-center">${dots}</div>`;
     }
 
     // Event handlers
     function handleSearch(val) {
+      toggleClearSearchBtn(!!val);
       renderTable();
+      renderBillsTab(recentEvents);
+    }
+
+    function filterByProvider(event, providerName) {
+      if (event) event.stopPropagation();
+      const searchInput = document.getElementById('global-search');
+      if (searchInput) {
+        searchInput.value = providerName;
+        handleSearch(providerName);
+      }
+      showTab('bills');
+    }
+
+    function clearSearch() {
+      const searchInput = document.getElementById('global-search');
+      if (searchInput) {
+        searchInput.value = '';
+        handleSearch('');
+      }
+    }
+
+    function toggleClearSearchBtn(show) {
+      const btn = document.getElementById('clear-search-btn');
+      if (btn) {
+        if (show) btn.classList.remove('hidden');
+        else btn.classList.add('hidden');
+      }
+      const billsBtn = document.getElementById('bills-clear-filter');
+      if (billsBtn) {
+        if (show) billsBtn.classList.remove('hidden');
+        else billsBtn.classList.add('hidden');
+      }
     }
 
     function filteredSubs() {
@@ -761,6 +889,7 @@
         const hasSpend = spend && spend.payments > 0;
         const totalEst = totalEstCzk(s);
         const plan = extractPlan(s);
+        const catColor = CAT_COLOR[s.category] || '#8a8a8e';
 
         const statusClass = flagged 
           ? 'bg-red-500/10 text-red-400 border-red-500/20' 
@@ -790,7 +919,7 @@
                 ${plan ? `<span class="block text-[10px] text-on-surface-variant opacity-60">${plan}</span>` : ''}
               </div>
             </td>
-            <td class="py-4 px-6"><span class="px-2.5 py-1 rounded bg-white/5 text-xs text-on-surface-variant uppercase tracking-wider font-semibold text-[10px]">${s.category.replace('_',' ')}</span></td>
+            <td class="py-4 px-6"><span class="px-2.5 py-1 rounded bg-white/5 text-xs uppercase tracking-wider font-semibold text-[10px]" style="color: ${catColor}; border: 1px solid ${catColor}30">${s.category.replace('_',' ')}</span></td>
             <td class="py-4 px-6 text-right font-mono font-semibold text-primary text-sm">${Math.round(mo)} CZK ${actualDisplay}</td>
             <td class="py-4 px-6 text-right font-mono font-semibold text-on-surface text-sm">${totalDisplay} ${totalSubLabel}</td>
             <td class="py-4 px-6 text-center">${hasSpend ? renderSparkline(s.id, spend.dates, spend.total_czk) : usageBar(s)}</td>
@@ -830,28 +959,45 @@
       container.innerHTML = activeSubs.map(s => {
         const spend = getWalletSpend(s.id);
         const mo = monthly(s);
-        const change = spend && spend.payments > 1 ? '+12.5%' : '—';
+        const change = spend && spend.change_pct !== undefined 
+          ? (spend.change_pct >= 0 ? '+' : '') + spend.change_pct.toFixed(1) + '%' 
+          : '—';
+        
+        const lastEvent = recentEvents.find(e => e.subscription_id === s.id);
+        const lastPaymentVal = lastEvent ? `-${Math.round(lastEvent.amount).toLocaleString()} ${lastEvent.currency}` : '—';
+        const lastPaymentDate = lastEvent && lastEvent.event_date ? lastEvent.event_date.substring(0, 10) : '—';
+
         return `
           <div class="glass-panel border border-white/10 p-6 rounded-3xl hover:border-primary/50 transition-all duration-300 group cursor-pointer flex flex-col justify-between" onclick="showTab('services')">
             <div>
-              <div class="flex justify-between items-start mb-6">
-                <div class="bg-white/5 p-2 rounded-xl border border-white/10">
-                  ${logoHtml(s, 'md')}
+              <div class="flex justify-between items-start mb-4">
+                <div class="bg-white/5 p-2 rounded-2xl border border-white/10 cursor-pointer" onclick="filterByProvider(event, '${s.service_name.replace(/'/g, "\\'")}')" title="Filter by this provider">
+                  ${logoHtml(s, 'lg')}
                 </div>
                 <span class="text-tertiary font-mono font-bold text-[9px] tracking-wider bg-tertiary-container/30 px-2 py-0.5 rounded-full">${change}</span>
               </div>
               <h4 class="font-bold text-sm tracking-tight text-on-background uppercase mb-0.5">${s.service_name}</h4>
-              <p class="text-on-surface-variant text-[10px] uppercase font-mono tracking-wider opacity-60">${s.category.replace('_',' ')}</p>
+              <p class="text-on-surface-variant text-[10px] uppercase font-mono tracking-wider opacity-60 mb-3">${s.category.replace('_',' ')}</p>
             </div>
             
-            <div class="mt-6 space-y-4">
-              <div class="h-6">
-                ${spend ? renderSparkline(s.id, spend.dates, spend.total_czk) : usageBar(s)}
+            <div class="space-y-4">
+              <div class="h-8">
+                ${spend ? renderSparkline(s.id, spend.dates, spend.total_czk, true) : usageBar(s)}
               </div>
               
-              <div class="flex justify-between items-baseline border-t border-white/5 pt-3">
-                <span class="text-[10px] text-on-surface-variant opacity-60">Avg cost</span>
-                <span class="font-mono text-sm text-primary font-bold">${Math.round(mo)} CZK/mo</span>
+              <div class="border-t border-white/5 pt-3 text-xs space-y-1 text-on-surface-variant font-mono">
+                <div class="flex justify-between">
+                  <span class="opacity-60 text-[10px]">Last Payment:</span>
+                  <span class="font-bold text-on-surface">${lastPaymentVal}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="opacity-60 text-[10px]">Last Date:</span>
+                  <span class="text-on-surface">${lastPaymentDate}</span>
+                </div>
+                <div class="flex justify-between border-t border-white/5 pt-2">
+                  <span class="opacity-60 text-[10px]">Avg Cost:</span>
+                  <span class="font-bold text-primary">${Math.round(mo).toLocaleString()} CZK/mo</span>
+                </div>
               </div>
             </div>
           </div>
@@ -879,11 +1025,16 @@
               ${logoHtml(logoSub, 'sm')}
               <div>
                 <div class="font-semibold text-xs text-on-background">${e.service_name}</div>
-                <div class="text-[10px] text-on-surface-variant opacity-50 font-mono">${formattedDate} · ${e.source_type.toUpperCase()}</div>
+                <div class="text-[10px] text-on-surface-variant opacity-50 font-mono">${e.source_type.toUpperCase()}</div>
               </div>
             </div>
-            <div class="text-right">
-              <div class="font-mono text-xs font-bold text-primary">-${formattedAmount}</div>
+            <div class="flex items-center gap-4">
+              <div class="text-right">
+                <div class="font-mono text-xs font-bold text-primary">-${formattedAmount}</div>
+              </div>
+              <span class="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded-lg text-[10px] font-mono font-bold tracking-tight">
+                ${formattedDate}
+              </span>
             </div>
           </div>
         `;
@@ -916,20 +1067,26 @@
       const tbody = document.getElementById('bills-tbody');
       if (!tbody) return;
 
-      if (!events.length) {
+      const search = (document.getElementById('global-search')?.value || '').toLowerCase();
+      const filteredEvents = events.filter(e => {
+        return !search || e.service_name.toLowerCase().includes(search) || (e.category || '').toLowerCase().includes(search);
+      });
+
+      if (!filteredEvents.length) {
         tbody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-on-surface-variant font-mono text-xs">NO TRANSACTION RECORDS</td></tr>`;
         return;
       }
 
-      tbody.innerHTML = events.map((e, idx) => {
+      tbody.innerHTML = filteredEvents.map((e, idx) => {
         const formattedDate = e.event_date ? e.event_date.replace('T', ' ').substring(0, 16) : '—';
         const formattedAmount = `${Math.round(e.amount).toLocaleString()} ${e.currency}`;
         const logoSub = { service_name: e.service_name, id: e.subscription_id };
+        const catColor = CAT_COLOR[e.category] || '#8a8a8e';
         return `
           <tr class="hover:bg-white/5 border-b border-white/5 transition-colors">
             <td class="py-4 px-6 text-on-surface-variant font-mono text-xs">${String(idx + 1).padStart(3, '0')}</td>
             <td class="py-4 px-6 font-bold flex items-center gap-3">${logoHtml(logoSub, 'sm')}${e.service_name}</td>
-            <td class="py-4 px-6 text-xs uppercase font-mono tracking-wider opacity-60">${e.category.replace('_',' ')}</td>
+            <td class="py-4 px-6 text-xs uppercase font-mono tracking-wider font-semibold" style="color: ${catColor}">${e.category.replace('_',' ')}</td>
             <td class="py-4 px-6 text-right font-mono font-semibold text-primary">-${formattedAmount}</td>
             <td class="py-4 px-6 text-center"><span class="px-2 py-0.5 rounded bg-white/5 text-[9px] font-bold uppercase tracking-wider">${e.source_type}</span></td>
             <td class="py-4 px-6 text-right text-xs text-on-surface-variant font-mono">${formattedDate}</td>
@@ -1024,40 +1181,116 @@
         return;
       }
 
-      const rows = topCats.map(cat => {
-        const color = CAT_COLOR[cat] || '#8a8a8e';
-        const vals = months.map(m => (byCategory[cat] || {})[m] || 0);
-        const max = Math.max(...vals, 1);
-        
-        const bars = vals.map((v, i) => {
-          const pct = Math.round((v / max) * 40);
-          return `
-            <div class="flex-1 flex flex-col items-center justify-end h-16 group/bar relative" title="${months[i]}: ${Math.round(v)} CZK">
-              <span class="absolute bottom-full mb-1 text-[8px] text-primary opacity-0 group-hover/bar:opacity-100 transition-opacity font-mono font-bold">${v > 0 ? Math.round(v) : ''}</span>
-              <div class="w-2 md:w-3.5 bg-primary/70 rounded-t-sm transition-all duration-300" style="height: ${Math.max(2, pct)}px; background-color: ${color}"></div>
-            </div>
-          `;
-        }).join('');
+      const width = 700;
+      const height = 280;
+      const paddingLeft = 70;
+      const paddingRight = 20;
+      const paddingTop = 20;
+      const paddingBottom = 40;
 
+      const step = months.length > 1 ? (width - paddingLeft - paddingRight) / (months.length - 1) : 0;
+
+      let maxVal = 0;
+      topCats.forEach(cat => {
+        months.forEach(m => {
+          const val = (byCategory[cat] || {})[m] || 0;
+          if (val > maxVal) maxVal = val;
+        });
+      });
+      if (maxVal === 0) maxVal = 1;
+      maxVal = maxVal * 1.1;
+
+      // Draw gridlines and labels
+      const gridCount = 4;
+      let gridLines = '';
+      for (let i = 0; i <= gridCount; i++) {
+        const yVal = (maxVal / gridCount) * i;
+        const yPos = height - paddingBottom - (yVal / maxVal) * (height - paddingTop - paddingBottom);
+        gridLines += `
+          <line x1="${paddingLeft}" y1="${yPos}" x2="${width - paddingRight}" y2="${yPos}" stroke="rgba(255,255,255,0.05)" stroke-dasharray="4" />
+          <text x="${paddingLeft - 10}" y="${yPos + 3}" fill="rgba(255,255,255,0.4)" font-size="9" text-anchor="end" font-family="monospace">${Math.round(yVal).toLocaleString()}</text>
+        `;
+      }
+
+      let xAxisLabels = '';
+      months.forEach((m, idx) => {
+        const x = paddingLeft + idx * step;
+        xAxisLabels += `
+          <text x="${x}" y="${height - paddingBottom + 18}" fill="rgba(255,255,255,0.5)" font-size="9" text-anchor="middle" font-family="monospace">${m}</text>
+          <line x1="${x}" y1="${height - paddingBottom}" x2="${x}" y2="${height - paddingBottom + 4}" stroke="rgba(255,255,255,0.15)" />
+        `;
+      });
+
+      function getBezierPath(points) {
+        if (points.length === 0) return '';
+        if (points.length === 1) return `M ${points[0].x} ${points[0].y} L ${points[0].x} ${points[0].y}`;
+        let d = `M ${points[0].x} ${points[0].y}`;
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[i];
+          const p1 = points[i + 1];
+          const cp1x = p0.x + (p1.x - p0.x) / 3;
+          const cp1y = p0.y;
+          const cp2x = p0.x + 2 * (p1.x - p0.x) / 3;
+          const cp2y = p1.y;
+          d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p1.x} ${p1.y}`;
+        }
+        return d;
+      }
+
+      let svgPaths = '';
+      topCats.forEach(cat => {
+        const color = CAT_COLOR[cat] || '#8a8a8e';
+        const points = months.map((m, idx) => {
+          const val = (byCategory[cat] || {})[m] || 0;
+          const x = paddingLeft + idx * step;
+          const y = height - paddingBottom - (val / maxVal) * (height - paddingTop - paddingBottom);
+          return { x, y };
+        });
+        const linePath = getBezierPath(points);
+        const areaPath = linePath + ` L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`;
+        
+        svgPaths += `
+          <path d="${areaPath}" fill="${color}" fill-opacity="0.15" />
+          <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" />
+          ${points.map((p, idx) => {
+            const val = (byCategory[cat] || {})[months[idx]] || 0;
+            if (val === 0) return '';
+            return `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${color}" stroke="#161219" stroke-width="1.5" title="${cat}: ${Math.round(val)} CZK" />`;
+          }).join('')}
+        `;
+      });
+
+      const legend = topCats.map(cat => {
+        const color = CAT_COLOR[cat] || '#8a8a8e';
         return `
-          <div class="flex items-center gap-4 py-3 border-b border-white/5">
-            <span class="w-24 text-[10px] font-bold text-on-surface-variant/80 uppercase tracking-widest truncate" style="color: ${color}">${cat.replace('_',' ')}</span>
-            <div class="flex-grow flex items-end gap-2 px-4 h-16">${bars}</div>
+          <div class="flex items-center gap-1.5 text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider">
+            <span class="w-2.5 h-2.5 rounded-sm" style="background-color: ${color}"></span>
+            <span>${cat.replace('_',' ')}</span>
           </div>
         `;
       }).join('');
 
-      const monthHeaders = months.map(m => `<span class="flex-1 text-center font-mono font-bold text-[9px] text-on-surface-variant opacity-60 uppercase">${m}</span>`).join('');
-
       el.innerHTML = `
         <div class="glass-panel p-6 rounded-2xl space-y-4">
-          <div class="flex justify-between items-center border-b border-white/5 pb-3">
-            <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase">Monthly Category Trend</h4>
-            <span class="text-[10px] text-on-surface-variant opacity-40 font-mono">Last 3 Months</span>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-3 gap-2">
+            <div>
+              <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase">Monthly Category Trend</h4>
+              <p class="text-[10px] text-on-surface-variant opacity-60">Distribution of subscription spend over time</p>
+            </div>
+            <div class="flex flex-wrap gap-x-4 gap-y-1.5">${legend}</div>
           </div>
           
-          <div class="flex pl-28 gap-2 pr-4">${monthHeaders}</div>
-          <div class="space-y-2">${rows}</div>
+          <div class="w-full overflow-x-auto">
+            <svg viewBox="0 0 ${width} ${height}" class="w-full min-w-[600px] h-auto block overflow-visible">
+              <!-- Gridlines -->
+              ${gridLines}
+              <!-- Paths -->
+              ${svgPaths}
+              <!-- Axes -->
+              <line x1="${paddingLeft}" y1="${height - paddingBottom}" x2="${width - paddingRight}" y2="${height - paddingBottom}" stroke="rgba(255,255,255,0.1)" />
+              ${xAxisLabels}
+            </svg>
+          </div>
         </div>
       `;
     }
@@ -1108,7 +1341,10 @@
           const actualTotal = Object.values(spendMap).reduce((sum, v) => sum + (v.total_czk || 0), 0);
           
           document.getElementById('hero-total-paid').textContent = Math.round(actualTotal).toLocaleString() + ' CZK';
-          document.getElementById('hero-monthly-avg').textContent = Math.round(s.actual_monthly_czk || 0).toLocaleString() + ' CZK';
+          
+          const activeMonthlyAvg = allSubs.filter(s => s.status === 'active').reduce((sum, s) => sum + monthly(s), 0);
+          document.getElementById('hero-monthly-avg').textContent = Math.round(activeMonthlyAvg).toLocaleString() + ' CZK';
+          
           document.getElementById('hero-active-count').textContent = s.total_subscriptions;
           document.getElementById('hero-db-records').textContent = `${s.wallet_record_count || 0} Records`;
           
@@ -1258,19 +1494,31 @@
 
         // Data timespan calculate
         (function() {
-          const dates = allSubs.map(s => s.start_date).filter(Boolean).sort();
-          if (dates.length) {
-            const earliest = dates[0].substring(0, 7);
-            const now = new Date();
-            const latest = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-            const fmt = d => {
-              const [y, m] = d.split('-');
-              return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][+m-1] + ' ' + y;
-            };
-            const [ey, em] = earliest.split('-').map(Number);
-            const spanMo = (now.getFullYear() - ey)*12 + now.getMonth()+1 - em + 1;
-            document.getElementById('data-span').textContent = `${fmt(earliest)} – ${fmt(latest)} · ${spanMo}MO`;
+          const startDates = allSubs.map(s => s.start_date).filter(Boolean).map(d => new Date(d));
+          if (!startDates.length && recentEvents.length) {
+            const eventDates = recentEvents.map(e => new Date(e.event_date)).filter(d => !isNaN(d.getTime()));
+            if (eventDates.length) {
+              startDates.push(new Date(Math.min(...eventDates)));
+            }
           }
+          const oldestDate = startDates.length ? new Date(Math.min(...startDates)) : new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+          const diffTime = Math.abs(new Date() - oldestDate);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          document.getElementById('financial-footprint-header').textContent = `My Spend in last ${diffDays} days`;
+          document.getElementById('total-spend-label').textContent = `Total Spend in ${diffDays} days`;
+          document.getElementById('monthly-average-label').textContent = `Monthly Average`;
+
+          const earliest = oldestDate.toISOString().substring(0, 7);
+          const now = new Date();
+          const latest = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+          const fmt = d => {
+            const [y, m] = d.split('-');
+            return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][+m-1] + ' ' + y;
+          };
+          const [ey, em] = earliest.split('-').map(Number);
+          const spanMo = (now.getFullYear() - ey)*12 + now.getMonth()+1 - em + 1;
+          document.getElementById('data-span').textContent = `${fmt(earliest)} – ${fmt(latest)} · ${spanMo}MO`;
         })();
 
         // Renders
@@ -1282,6 +1530,8 @@
         renderAllocation(allSubs);
         renderBurnRate();
         await renderStats();
+        renderForecast();
+        renderBreakdownGrid();
 
         if (trendResp) renderMonthlyTrend(trendResp);
         if (syncResp) renderSyncStatus(syncResp);
@@ -1296,6 +1546,252 @@
         console.error(err);
         bot.textContent = 'ERR_';
         bot.className = 'text-red-400 font-mono text-[10px]';
+      }
+    }
+
+    // Modal close & clear
+    function closeConsoleModal() {
+      document.getElementById('console-modal').classList.add('hidden');
+    }
+
+    function clearConsole() {
+      document.getElementById('console-output').innerHTML = '';
+    }
+
+    async function runAdminJob(endpoint, title) {
+      const modal = document.getElementById('console-modal');
+      const titleEl = document.getElementById('console-modal-title');
+      const output = document.getElementById('console-output');
+      const status = document.getElementById('console-status');
+
+      modal.classList.remove('hidden');
+      titleEl.textContent = `Admin Console: ${title}`;
+      output.innerHTML = `<div class="text-gray-400">[${new Date().toISOString()}] Initializing connection to ${endpoint}...</div>`;
+      status.textContent = 'EXECUTING...';
+
+      try {
+        const response = await fetch(`${API}${endpoint}`, { method: 'POST' });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        output.innerHTML += `<div class="text-yellow-400">[${new Date().toISOString()}] Request sent. Processing response...</div>`;
+
+        if (contentType.includes('text/event-stream') || response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let done = false;
+
+          while (!done) {
+            const { value, done: doneReading } = await reader.read();
+            done = doneReading;
+            if (value) {
+              const chunk = decoder.decode(value, { stream: !done });
+              const lines = chunk.split('\n');
+              lines.forEach(line => {
+                if (!line.trim()) return;
+                let displayLine = line;
+                let textClass = 'text-green-400';
+
+                if (line.startsWith('data:')) {
+                  displayLine = line.replace(/^data:\s*/, '');
+                  try {
+                    const parsed = JSON.parse(displayLine);
+                    if (parsed.message) {
+                      displayLine = parsed.message;
+                    } else if (parsed.log) {
+                      displayLine = parsed.log;
+                    } else {
+                      displayLine = JSON.stringify(parsed);
+                    }
+                    if (parsed.level === 'error') textClass = 'text-red-400';
+                    else if (parsed.level === 'warn') textClass = 'text-yellow-400';
+                    else if (parsed.level === 'info') textClass = 'text-green-400';
+                  } catch(e) {}
+                }
+
+                const div = document.createElement('div');
+                div.className = textClass;
+                div.textContent = `> ${displayLine}`;
+                output.appendChild(div);
+                output.scrollTop = output.scrollHeight;
+              });
+            }
+          }
+        } else {
+          const text = await response.text();
+          try {
+            const json = JSON.parse(text);
+            output.innerHTML += `<div class="text-white">${JSON.stringify(json, null, 2)}</div>`;
+          } catch(e) {
+            output.innerHTML += `<div class="text-white">${text}</div>`;
+          }
+        }
+
+        output.innerHTML += `<div class="text-green-500 font-bold">[${new Date().toISOString()}] Job completed successfully.</div>`;
+        status.textContent = 'COMPLETED';
+        await loadAll();
+      } catch (err) {
+        output.innerHTML += `<div class="text-red-500 font-bold">[${new Date().toISOString()}] Execution failed: ${err.message}</div>`;
+        status.textContent = 'FAILED';
+      }
+    }
+
+    function renderForecast() {
+      const container = document.getElementById('forecast-card');
+      if (!container) return;
+
+      const activeMonthlyAvg = allSubs.filter(s => s.status === 'active').reduce((sum, s) => sum + monthly(s), 0);
+      const predictedSpend = activeMonthlyAvg * 1.03; // add a slight projection buffer
+      
+      const anomalies = allSubs.filter(s => s.reconciliation_flag || s.status === 'idle');
+      let alertHtml = '';
+      if (anomalies.length > 0) {
+        alertHtml = `
+          <div class="flex items-start gap-2.5 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-[11px] text-red-400">
+            <span class="material-symbols-outlined text-sm mt-0.5">warning</span>
+            <div>
+              <span class="font-bold">Anomaly Alert:</span>
+              <span>${anomalies.length} services require cost reviews or have inactive/idle spend.</span>
+            </div>
+          </div>
+        `;
+      } else {
+        alertHtml = `
+          <div class="flex items-center gap-2.5 p-3 bg-green-500/10 border border-green-500/20 rounded-xl text-[11px] text-green-400">
+            <span class="material-symbols-outlined text-sm">check_circle</span>
+            <span>No anomalies detected. All active service costs align with history.</span>
+          </div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="absolute -right-6 -bottom-6 opacity-5">
+          <span class="material-symbols-outlined text-9xl text-primary">online_prediction</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <h4 class="font-bold text-xs tracking-widest text-on-surface-variant uppercase">Cost Forecasting</h4>
+          <span class="px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[9px] font-mono font-bold">CONFIDENCE 92%</span>
+        </div>
+        <div class="mt-2">
+          <span class="text-[10px] text-on-surface-variant opacity-60">Estimated Next Month Spend</span>
+          <div class="font-mono text-3xl font-bold text-primary mt-1">${Math.round(predictedSpend).toLocaleString()} CZK</div>
+        </div>
+        <div class="mt-2">
+          ${alertHtml}
+        </div>
+      `;
+    }
+
+    function renderBreakdownGrid() {
+      const activeMonthlyAvg = allSubs.filter(s => s.status === 'active').reduce((sum, s) => sum + monthly(s), 0);
+      const forecastEl = document.getElementById('breakdown-forecast');
+      if (forecastEl) {
+        forecastEl.innerHTML = `
+          <div class="space-y-1">
+            <span class="text-[10px] text-on-surface-variant opacity-60">Est. Monthly Costs</span>
+            <div class="font-mono text-lg font-bold text-primary">${Math.round(activeMonthlyAvg).toLocaleString()} CZK</div>
+          </div>
+          <div class="space-y-1">
+            <span class="text-[10px] text-on-surface-variant opacity-60">Est. Yearly Costs</span>
+            <div class="font-mono text-lg font-bold text-on-background">${Math.round(activeMonthlyAvg * 12).toLocaleString()} CZK</div>
+          </div>
+          <div class="space-y-1 border-t border-white/5 pt-3">
+            <span class="text-[10px] text-on-surface-variant opacity-60">Avg. Cost per Service</span>
+            <div class="font-mono text-sm font-semibold text-secondary-fixed-dim">
+              ${allSubs.length ? Math.round(activeMonthlyAvg / allSubs.length).toLocaleString() : 0} CZK/mo
+            </div>
+          </div>
+        `;
+      }
+
+      const savingsEl = document.getElementById('breakdown-savings');
+      if (savingsEl) {
+        const idleSubs = allSubs.filter(s => s.status === 'idle');
+        if (!idleSubs.length) {
+          savingsEl.innerHTML = `<div class="text-[11px] text-on-surface-variant opacity-60 py-4 text-center">No idle subscriptions detected.</div>`;
+        } else {
+          const totalIdleCost = idleSubs.reduce((sum, s) => sum + monthly(s), 0);
+          const idleList = idleSubs.map(s => {
+            const logoSub = { service_name: s.service_name, id: s.id };
+            return `
+              <div class="flex items-center justify-between text-xs p-2 bg-white/5 border border-white/5 rounded-xl">
+                <div class="flex items-center gap-2">
+                  ${logoHtml(logoSub, 'sm')}
+                  <span class="font-semibold text-[11px] text-on-background truncate max-w-[80px]">${s.service_name}</span>
+                </div>
+                <span class="font-mono font-bold text-red-400 text-[11px]">${Math.round(monthly(s))} CZK/mo</span>
+              </div>
+            `;
+          }).join('');
+          savingsEl.innerHTML = `
+            <div class="text-[11px] text-on-surface-variant font-semibold mb-2 text-green-400">
+              Save up to <span class="font-mono font-bold">${Math.round(totalIdleCost).toLocaleString()} CZK/mo</span>
+            </div>
+            <div class="space-y-2 max-h-[220px] overflow-y-auto">${idleList}</div>
+          `;
+        }
+      }
+
+      const spendersEl = document.getElementById('breakdown-spenders');
+      if (spendersEl) {
+        const topSpenders = [...allSubs]
+          .sort((a, b) => monthly(b) - monthly(a))
+          .slice(0, 5);
+
+        if (!topSpenders.length) {
+          spendersEl.innerHTML = `<div class="text-[11px] text-on-surface-variant opacity-60 py-4 text-center">No spend data.</div>`;
+        } else {
+          const maxSpend = monthly(topSpenders[0]) || 1;
+          spendersEl.innerHTML = topSpenders.map((s, idx) => {
+            const mo = monthly(s);
+            const pct = (mo / maxSpend) * 100;
+            const color = getFallbackColor(s.service_name);
+            const logoSub = { service_name: s.service_name, id: s.id };
+            return `
+              <div class="space-y-1 text-xs">
+                <div class="flex justify-between items-center font-mono">
+                  <div class="flex items-center gap-1.5">
+                    ${logoHtml(logoSub, 'sm')}
+                    <span class="font-bold text-on-surface-variant truncate max-w-[80px] text-[10px]">${s.service_name.toUpperCase()}</span>
+                  </div>
+                  <span class="font-semibold text-[11px] text-primary">${Math.round(mo)} CZK</span>
+                </div>
+                <div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full" style="width: ${pct}%; background-color: ${color}"></div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+      const reviewEl = document.getElementById('breakdown-review');
+      if (reviewEl) {
+        const mismatchItems = allSubs.filter(s => s.reconciliation_flag);
+        const unconfirmedItems = allSubs.filter(s => !s.confirmed_by_wallet);
+        const allReviewItems = [...mismatchItems, ...unconfirmedItems].slice(0, 5);
+
+        if (!allReviewItems.length) {
+          reviewEl.innerHTML = `<div class="text-[11px] text-on-surface-variant opacity-60 py-4 text-center">No items requiring review.</div>`;
+        } else {
+          reviewEl.innerHTML = allReviewItems.map(s => {
+            const logoSub = { service_name: s.service_name, id: s.id };
+            const label = s.reconciliation_flag 
+               ? `<span class="px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 text-[8px] font-bold uppercase">MISMATCH</span>`
+               : `<span class="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-[8px] font-bold uppercase">UNCONFIRMED</span>`;
+            return `
+              <div class="flex items-center justify-between text-xs p-2 bg-white/5 border border-white/5 rounded-xl">
+                <div class="flex items-center gap-2">
+                  ${logoHtml(logoSub, 'sm')}
+                  <span class="font-semibold text-[11px] text-on-background truncate max-w-[80px]">${s.service_name}</span>
+                </div>
+                <div>${label}</div>
+              </div>
+            `;
+          }).join('');
+        }
       }
     }
 

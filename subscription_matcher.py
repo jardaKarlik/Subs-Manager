@@ -116,6 +116,24 @@ PAYEE_ALIASES = {
     'steam games':          'Steam',
 }
 
+def resolve_category_from_payee(payee: str, default: str = 'other') -> str:
+    p = (payee or '').lower()
+    if any(x in p for x in ['google cloud', 'gcp', 'aws', 'amazon web services', 'azure', 'digitalocean', 'linode', 'vultr', 'cloudflare', 'railway.app', 'fly.io', 'render.com', 'hosting']):
+        return 'cloud'
+    if any(x in p for x in ['openai', 'chatgpt', 'anthropic', 'claude', 'perplexity', 'midjourney', 'replicate', 'elevenlabs', 'openrouter', 'stability']):
+        return 'ai'
+    if any(x in p for x in ['github', 'gitlab', 'bitbucket', 'jetbrains', 'pycharm', 'intellij', 'docker', 'figma', 'linear', 'sentry', 'datadog', 'vercel', 'netlify']):
+        return 'dev_tools'
+    if any(x in p for x in ['spotify', 'tidal', 'soundcloud', 'beatport', 'bandcamp', 'native instruments', 'loopmasters', 'ableton', 'fl studio']):
+        return 'music'
+    if any(x in p for x in ['netflix', 'disney', 'hbo', 'max.com', 'paramount', 'hulu', 'peacock', 'prime video', 'youtube', 'twitch', 'sky showtime', 'skyshowtime', 'tv nova']):
+        return 'streaming'
+    if any(x in p for x in ['adobe', 'creative cloud', 'canva']):
+        return 'design'
+    if any(x in p for x in ['notion', 'slack', 'discord', 'zoom', '1password', 'lastpass', 'bitwarden', 'dropbox', 'idoklad']):
+        return 'productivity'
+    return default
+
 # Payee strings that must NEVER be matched to a subscription.
 # Numeric-only = bank account / reference number.
 # Empty = bank did not export a payee name.
@@ -180,7 +198,12 @@ def get_effective_payee(record: FinancialRecord) -> str:
         elif ';' in note:
             parts = note.split(';')
             if len(parts) >= 2:
-                candidate = parts[1].strip()
+                # If first part has currency/decimal numbers, parts[1] is the merchant.
+                # Otherwise, parts[0] is the merchant name!
+                if re.search(r'\b(czk|eur|usd|gbp|kč)\b|\d+[\.,]\d+', parts[0], re.I):
+                    candidate = parts[1].strip()
+                else:
+                    candidate = parts[0].strip()
                 if candidate and not _is_unmatchable_payee(candidate):
                     return candidate
         # Fallback to note if it's not unmatchable
@@ -286,6 +309,21 @@ class SubscriptionMatcher:
                     continue
 
                 payee_name = get_effective_payee(rec)
+                
+                # Special Override: Google Play Apps / Dublin charge of exactly 329 CZK is for iDoklad
+                payee_lower = payee_name.lower()
+                amount_abs = abs(rec.amount or 0.0)
+                if ("google" in payee_lower or "dublin" in payee_lower) and abs(amount_abs - 329.0) < 1.0 and (rec.currency == "CZK"):
+                    idoklad_sub = None
+                    for s in subs:
+                        if "idoklad" in s.service_name.lower():
+                            idoklad_sub = s
+                            break
+                    if idoklad_sub:
+                        rec.matched_subscription_id = idoklad_sub.id
+                        matched += 1
+                        continue
+                
                 sub = _match_payee_to_subscription(payee_name, subs)
                 if sub:
                     rec.matched_subscription_id = sub.id
@@ -830,20 +868,21 @@ class SubscriptionMatcher:
                 last_pay = max(r.date for r in records if r.date)
                 first_pay = min(r.date for r in records if r.date)
 
-                # Determine category: check if the records have a category_name we can map
-                category = 'other'
-                for r in records:
-                    if r.category_name:
-                        w_cat = r.category_name.lower()
-                        if 'software' in w_cat or 'apps' in w_cat or 'games' in w_cat:
-                            category = 'dev_tools'
-                        elif 'tv' in w_cat or 'streaming' in w_cat:
-                            category = 'streaming'
-                        elif 'music' in w_cat:
-                            category = 'music'
-                        elif 'books' in w_cat or 'subscription' in w_cat:
-                            category = 'productivity'
-                        break
+                # Determine category: check payee name first, then fall back to wallet category
+                category = resolve_category_from_payee(service_name, 'other')
+                if category == 'other':
+                    for r in records:
+                        if r.category_name:
+                            w_cat = r.category_name.lower()
+                            if 'software' in w_cat or 'apps' in w_cat or 'games' in w_cat:
+                                category = 'dev_tools'
+                            elif 'tv' in w_cat or 'streaming' in w_cat:
+                                category = 'streaming'
+                            elif 'music' in w_cat:
+                                category = 'music'
+                            elif 'books' in w_cat or 'subscription' in w_cat:
+                                category = 'productivity'
+                            break
 
                 # Create subscription
                 new_sub = Subscription(

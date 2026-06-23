@@ -261,6 +261,7 @@ PROVIDER_ALIASES = {
     "adobe": ("Adobe", "design"),
     "adobesign": ("Adobe", "design"),
     "adobecreativecloud": ("Adobe", "design"),
+    "idoklad": ("iDoklad", "productivity"),
 }
 
 # Streaming, Music, AI
