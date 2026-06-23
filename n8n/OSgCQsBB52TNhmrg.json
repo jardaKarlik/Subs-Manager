@@ -1,0 +1,138 @@
+{
+  "updatedAt": "2026-06-23T01:04:09.019Z",
+  "createdAt": "2026-06-22T23:55:04.832Z",
+  "id": "OSgCQsBB52TNhmrg",
+  "name": "wallet",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "id": "32315615-7097-4756-ae71-d7c1eb0f789d",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://rest.budgetbakers.com/wallet/v1/api/records",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "specifyQuery": "keyValue",
+        "queryParameters": [
+          {
+            "name": "recordDate",
+            "value": "gte.{{ $today.plus({months: -3}).toISO() }}"
+          },
+          {
+            "name": "limit",
+            "value": "200"
+          },
+          {
+            "name": "offset",
+            "value": "0"
+          }
+        ],
+        "options": {}
+      },
+      "id": "a7bdce5f-1457-4895-8c37-9e12853a1c76",
+      "name": "Wallet API Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        288,
+        0
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "EJngoe18EgaLu6FU",
+          "name": "Wallet API Bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const records = $input.all();\nconst rows = records.map(r => {\n    const rec = r.json;\n    return {\n        date: rec.recordDate ? rec.recordDate.substring(0, 10) : '',\n        type: rec.recordType || '',\n        amount: rec.amount ? rec.amount.value : 0,\n        currency: rec.amount ? rec.amount.currencyCode : '',\n        payee: rec.counterParty || '',\n        category: rec.category ? rec.category.name : '',\n        note: (rec.note || '').substring(0, 80),\n    };\n});\nrows.sort((a, b) => (a.date < b.date ? 1 : -1));\nlet totalExpenses = 0, totalIncome = 0, countExpenses = 0, countIncome = 0;\nrows.forEach(r => {\n    if (r.type === 'expense') { totalExpenses += Math.abs(r.amount); countExpenses++; }\n    else if (r.type === 'income') { totalIncome += r.amount; countIncome++; }\n});\nreturn [{\n    summary: {\n        total_records: rows.length,\n        total_expenses: Math.round(totalExpenses * 100) / 100,\n        total_income: Math.round(totalIncome * 100) / 100,\n        count_expenses: countExpenses,\n        count_income: countIncome,\n        currency: rows.length > 0 ? rows[0].currency : '',\n        period: 'Last 3 months',\n    },\n    records: rows,\n}];"
+      },
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d474",
+      "name": "Format To Data Table",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Wallet API Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wallet API Request": {
+      "main": [
+        [
+          {
+            "node": "Format To Data Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "f239e5c4-ea3f-4c2e-a771-75b6cecd0022",
+  "activeVersionId": null,
+  "versionCounter": 20,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-06-22T23:55:04.832Z",
+      "createdAt": "2026-06-22T23:55:04.832Z",
+      "role": "workflow:owner",
+      "workflowId": "OSgCQsBB52TNhmrg",
+      "projectId": "fATEPZmxGDyQahSw",
+      "project": {
+        "updatedAt": "2026-06-03T23:08:48.462Z",
+        "createdAt": "2026-06-03T17:52:17.676Z",
+        "id": "fATEPZmxGDyQahSw",
+        "name": "Jarda Karlik <j.karleek@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "37a7e34e-1ae1-470e-9294-2d8bf795c017"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
+}

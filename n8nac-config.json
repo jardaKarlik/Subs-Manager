@@ -1,0 +1,24 @@
+{
+  "version": 4,
+  "activeEnvironmentId": "subscription-manager-2",
+  "environmentTargets": [
+    {
+      "id": "subscription-manager",
+      "name": "subscription-manager",
+      "kind": "external-instance",
+      "url": "https://n8n-production-36e3d.up.railway.app"
+    }
+  ],
+  "environments": [
+    {
+      "id": "subscription-manager-2",
+      "name": "subscription-manager",
+      "syncSlug": "subscription-manager",
+      "environmentTargetId": "subscription-manager",
+      "projectId": "personal",
+      "projectName": "Personal",
+      "workflowsPath": "workflows",
+      "folderSync": false
+    }
+  ]
+}

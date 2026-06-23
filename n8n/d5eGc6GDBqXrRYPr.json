@@ -1,0 +1,128 @@
+{
+  "updatedAt": "2026-06-22T20:27:34.645Z",
+  "createdAt": "2026-06-15T08:22:48.017Z",
+  "id": "d5eGc6GDBqXrRYPr",
+  "name": "My workflow 2",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 22
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5d9b33e3-6b54-444d-98f8-c7237424b0a8",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "filters": {
+          "q": "Objednavka"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "45857a86-c76e-4dc4-a99d-4332d8a48e40",
+      "name": "Get many messages",
+      "webhookId": "c1e5f306-854b-437c-8cfb-d069c90f5872",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "0Vo0dCMZx8zcnv5R",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "a1b7b986-eeb5-4abe-9ba5-5e0ba1a93ca5",
+      "name": "Get many messages1",
+      "webhookId": "f30cf096-c4fe-4405-8622-040fe2edfd10"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get many messages1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many messages1": {
+      "main": [
+        [
+          {
+            "node": "Get many messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "6b8445c5-1ab2-46b7-a850-b22151ca7ad7",
+  "activeVersionId": null,
+  "versionCounter": 20,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-06-15T08:22:48.017Z",
+      "createdAt": "2026-06-15T08:22:48.017Z",
+      "role": "workflow:owner",
+      "workflowId": "d5eGc6GDBqXrRYPr",
+      "projectId": "fATEPZmxGDyQahSw",
+      "project": {
+        "updatedAt": "2026-06-03T23:08:48.462Z",
+        "createdAt": "2026-06-03T17:52:17.676Z",
+        "id": "fATEPZmxGDyQahSw",
+        "name": "Jarda Karlik <j.karleek@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "37a7e34e-1ae1-470e-9294-2d8bf795c017"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
+}

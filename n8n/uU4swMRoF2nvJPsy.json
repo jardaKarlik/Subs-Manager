@@ -1,0 +1,175 @@
+{
+  "updatedAt": "2026-06-03T23:43:32.277Z",
+  "createdAt": "2026-06-03T23:10:16.526Z",
+  "id": "uU4swMRoF2nvJPsy",
+  "name": "My workflow",
+  "description": null,
+  "active": false,
+  "isArchived": true,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "bd650de6-bd52-4168-b905-383526297656",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "https://connect.composio.dev/mcp",
+        "authentication": "mcpOAuth2Api",
+        "tool": {
+          "__rl": true,
+          "value": "COMPOSIO_MANAGE_CONNECTIONS",
+          "mode": "list",
+          "cachedResultName": "COMPOSIO_MANAGE_CONNECTIONS"
+        },
+        "parameters": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "toolkits": "[\n  {\n    \"name\": \"string\",\n    \"action\": \"add\",\n    \"alias\": \"string\",\n    \"account_id\": \"string\"\n  }\n]"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "toolkits",
+              "displayName": "toolkits",
+              "defaultMatch": false,
+              "required": true,
+              "display": true,
+              "type": "array",
+              "defaultValue": "[\n  {\n    \"name\": \"string\",\n    \"action\": \"add\",\n    \"alias\": \"string\",\n    \"account_id\": \"string\"\n  }\n]",
+              "removed": false
+            },
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "defaultMatch": false,
+              "required": false,
+              "display": true,
+              "type": "string",
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        576,
+        0
+      ],
+      "id": "ac8e1884-a5ad-41d7-9e5b-c387bc822b14",
+      "name": "MCP Client",
+      "credentials": {
+        "mcpOAuth2Api": {
+          "id": "htRvriYe6vO6VZV3",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "78c68530-b84f-458e-92ec-37013096b407",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        80,
+        208
+      ],
+      "id": "99d69b3f-86c3-4c10-a573-573ada42433e",
+      "name": "Google Gemini Chat Model"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "MCP Client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "29cb0597-2af5-4680-860a-c30f2c704a40",
+  "activeVersionId": null,
+  "versionCounter": 20,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-06-03T23:10:16.526Z",
+      "createdAt": "2026-06-03T23:10:16.526Z",
+      "role": "workflow:owner",
+      "workflowId": "uU4swMRoF2nvJPsy",
+      "projectId": "fATEPZmxGDyQahSw",
+      "project": {
+        "updatedAt": "2026-06-03T23:08:48.462Z",
+        "createdAt": "2026-06-03T17:52:17.676Z",
+        "id": "fATEPZmxGDyQahSw",
+        "name": "Jarda Karlik <j.karleek@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "37a7e34e-1ae1-470e-9294-2d8bf795c017"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
+}
