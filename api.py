@@ -1322,19 +1322,15 @@ async def get_monthly_trend(
     """
     from database import SubscriptionEvent
     from datetime import datetime, timedelta
-    from sqlalchemy import func
 
     cutoff = datetime.utcnow() - timedelta(days=months * 31)
     rows = await db.execute(
         select(
-            func.strftime("%Y-%m", SubscriptionEvent.event_date).label("month"),
+            SubscriptionEvent.event_date,
             SubscriptionEvent.category,
-            func.sum(SubscriptionEvent.amount).label("total"),
-            func.count(SubscriptionEvent.id).label("count"),
+            SubscriptionEvent.amount
         )
         .where(SubscriptionEvent.event_date >= cutoff)
-        .group_by("month", SubscriptionEvent.category)
-        .order_by(func.strftime("%Y-%m", SubscriptionEvent.event_date).desc())
     )
     data = rows.all()
 
@@ -1342,9 +1338,15 @@ async def get_monthly_trend(
     month_totals = {}
     category_totals = {}
     for row in data:
-        month = row.month
+        dt = row.event_date
+        if not dt:
+            continue
+        if isinstance(dt, str):
+            month = dt[:7]
+        else:
+            month = dt.strftime("%Y-%m")
         cat = row.category or "other"
-        total = abs(row.total or 0)
+        total = abs(row.amount or 0)
         month_totals.setdefault(month, {})
         month_totals[month][cat] = month_totals[month].get(cat, 0) + total
         category_totals[cat] = category_totals.get(cat, 0) + total

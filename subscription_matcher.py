@@ -154,8 +154,8 @@ _is_paypal_record = _is_payment_processor_record
 
 def _is_unmatchable_payee(payee: str) -> bool:
     """Return True if the payee string should never be matched to a subscription."""
-    # Clean bank code first to allow matching digits-only check
-    cleaned = re.sub(r'/\d{3,4}\b', '', (payee or '').strip())
+    # Clean bank code first (handling optional spaces around slash) to allow matching digits-only check
+    cleaned = re.sub(r'\s*/\s*\d{3,4}\b', '', (payee or '').strip())
     return bool(_UNMATCHABLE_RE.match(cleaned))
 
 
@@ -192,12 +192,12 @@ def get_effective_payee(record: FinancialRecord) -> str:
 
 def _normalize_payee(payee: str) -> str:
     """Strip legal suffixes, bank codes, account numbers, and punctuation for fuzzy matching."""
-    # 1. Strip uppercase alphanumeric transaction IDs (length 6+) before lowercasing
-    s = re.sub(r'\b[A-Z0-9]{6,}\b', '', payee)
+    # 1. Strip uppercase mixed alphanumeric transaction IDs (length 6+) containing both letters and numbers
+    s = re.sub(r'\b(?=[A-Z]*[0-9])(?=[0-9]*[A-Z])[A-Z0-9]{6,}\b', '', payee)
     s = s.lower()
 
-    # 2. Strip bank codes like /0800 or /5500
-    s = re.sub(r'/\d{3,4}\b', '', s)
+    # 2. Strip bank codes like /0800 or /5500 (handling optional spaces around slash)
+    s = re.sub(r'\s*/\s*\d{3,4}\b', '', s)
 
     # 3. Strip standalone bank account numbers (any long sequence of digits, length 5+)
     s = re.sub(r'\b\d{5,}\b', '', s)
@@ -218,6 +218,10 @@ def _match_payee_to_subscription(payee: str, subs: list) -> Optional[Subscriptio
 
     payee_lower = payee.lower()
     payee_norm  = _normalize_payee(payee)
+
+    # Defensively reject empty normalized payees to avoid collisions
+    if not payee_norm:
+        return None
 
     if not re.search(r'[a-z]', payee_norm):
         return None
@@ -578,6 +582,8 @@ class SubscriptionMatcher:
         for rec in records:
             eff_payee = get_effective_payee(rec)
             key = _normalize_payee(eff_payee or 'unknown')
+            if not key:
+                continue
             by_payee.setdefault(key, []).append(rec)
 
         candidates = []

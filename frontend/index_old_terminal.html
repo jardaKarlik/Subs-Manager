@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Subs · Terminal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0b; --surface:#101013; --surface2:#16161a; --surface3:#1c1c21;
+  --hairline:rgba(255,255,255,0.06); --hairline-strong:rgba(255,255,255,0.12);
+  --text:#f5f5f3; --text-dim:#8a8a8e; --text-mute:#56565b;
+  --yellow:#ffe600; --yellow-soft:rgba(255,230,0,0.12);
+  --orange:#ff6b1a; --orange-soft:rgba(255,107,26,0.14);
+  --green:#5fe39a;
+  --mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+  --display:'Space Grotesk','Helvetica Neue',Helvetica,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh}
+.term{
+  min-height:100vh;padding:14px;
+  display:flex;flex-direction:column;gap:10px;
+  background:
+    linear-gradient(rgba(255,230,0,0.025) 1px,transparent 1px) 0 0/100% 24px,
+    linear-gradient(90deg,rgba(255,230,0,0.025) 1px,transparent 1px) 0 0/24px 100%,
+    var(--bg);
+}
+.bar-top{display:flex;align-items:stretch;border:1px solid var(--yellow);
+  background:linear-gradient(180deg,var(--yellow-soft),transparent)}
+.brand{padding:10px 16px;background:var(--yellow);color:var(--bg);
+  font-weight:700;font-size:13px;letter-spacing:2px;display:flex;align-items:center;gap:8px}
+.brand .sq{width:8px;height:8px;background:var(--bg)}
+.bar-top .ver{padding:10px 16px;border-right:1px solid var(--yellow);font-size:11px;color:var(--text-dim)}
+.bar-top .meta{flex:1;padding:10px 16px;display:flex;align-items:center;gap:16px;font-size:11px;color:var(--text-dim)}
+.bar-top .meta .ok{color:var(--green)}
+.bar-top .meta .spacer{flex:1}
+.bar-top .meta .user{color:var(--yellow)}
+.bar-top .mtd{padding:10px 16px;border-left:1px solid var(--yellow);display:flex;align-items:baseline;gap:8px;background:var(--bg)}
+.mtd .lbl{color:var(--text-dim);font-size:11px;letter-spacing:1.4px}
+.mtd .num{color:var(--yellow);font-size:20px;font-weight:700}
+.mtd .delta{color:var(--orange);font-size:11px}
+.ticker{border:1px solid var(--hairline-strong);background:var(--surface);
+  height:24px;overflow:hidden;position:relative;font-size:11px;letter-spacing:.5px;flex:0 0 auto}
+.ticker .track{white-space:nowrap;display:inline-block;padding:5px 0 0 100%;animation:tk 80s linear infinite}
+@keyframes tk{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.ticker::before,.ticker::after{content:'';position:absolute;top:0;bottom:0;width:60px;pointer-events:none;z-index:1}
+.ticker::before{left:0;background:linear-gradient(90deg,var(--surface),transparent)}
+.ticker::after{right:0;background:linear-gradient(-90deg,var(--surface),transparent)}
+.grid{flex:1;display:grid;grid-template-columns:1fr 460px;gap:10px;min-height:0}
+.col-right{display:grid;grid-template-rows:260px 1fr auto;gap:10px;min-height:0}
+.pane{border:1px solid var(--yellow);background:var(--bg);display:flex;flex-direction:column;min-height:0}
+.pane--muted{border-color:var(--hairline-strong)}
+.pane-rule{display:flex;align-items:center;gap:10px;padding:8px 12px;
+  border-bottom:1px solid var(--yellow);background:var(--yellow-soft);
+  font-size:10.5px;letter-spacing:1.4px;color:var(--yellow);text-transform:uppercase}
+.pane--muted .pane-rule{border-bottom-color:var(--hairline-strong);background:transparent;color:var(--text-dim)}
+.pane-rule .t{font-weight:600}
+.pane-rule .hint{margin-left:auto;color:var(--text-mute);font-size:9.5px;letter-spacing:1px}
+.register{border-color:var(--yellow)}
+.reg-scroll{flex:1;overflow:auto}
+table.reg{width:100%;border-collapse:collapse;font-size:13px}
+table.reg thead th{position:sticky;top:0;background:var(--bg);text-align:left;
+  font-weight:600;font-size:11px;letter-spacing:1.4px;color:var(--text-dim);
+  text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--hairline-strong);z-index:2;cursor:pointer}
+table.reg thead th:hover{color:var(--text-dim)}
+table.reg th.r,table.reg td.c-mo{text-align:right}
+.reg-row{border-bottom:1px dashed var(--hairline);cursor:pointer}
+.reg-row:nth-child(even){background:rgba(255,255,255,0.012)}
+.reg-row:hover{background:rgba(255,230,0,0.04)}
+.reg-row td{padding:10px 14px;vertical-align:middle}
+.reg-row.is-flagged{color:var(--text-dim)}
+.c-idx{color:var(--text-mute)}
+.svc{display:inline-flex;align-items:center;gap:8px}
+.svc-name{font-weight:600;color:var(--text)}
+.reg-row.is-flagged .svc-name{color:var(--text-dim)}
+.recon-flag{color:var(--orange);font-size:10px;margin-left:5px;cursor:default;vertical-align:middle}
+.c-plan{display:none}
+.c-cat{font-size:11px;letter-spacing:1.2px}
+.c-mo{color:var(--yellow);font-weight:600;text-align:right;white-space:nowrap}
+.reg-row.is-flagged .c-mo{color:var(--text-dim)}
+/* ANNUAL: secondary hero — clearly visible, subordinate to monthly */
+.c-mo-sub{text-align:right;padding:8px 14px;font-size:13px;font-weight:600;
+  color:rgba(255,230,0,0.55);white-space:nowrap}
+.reg-row.is-flagged .c-mo-sub{color:var(--text-mute)}
+.c-total-spent{display:none}
+.c-last{text-align:center;padding:8px 8px;white-space:nowrap;color:var(--text-mute);font-size:10px}
+th{cursor:pointer;user-select:none}
+.c-use .bar{letter-spacing:0;color:var(--text)}
+.c-use .bar--warn{color:var(--orange)}
+.c-since{color:var(--text-dim)}
+.c-status{font-size:11px;letter-spacing:1.2px;color:var(--green);white-space:nowrap}
+.reg-row.is-flagged .c-status{color:var(--orange)}
+.c-status .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.dot--ok{background:var(--green)}
+.dot--warn{background:var(--orange);box-shadow:0 0 6px var(--orange)}
+
+/* ── Logo icon — square with image or monogram fallback ── */
+.logo-wrap{
+  width:28px;height:28px;flex:0 0 auto;border-radius:4px;overflow:hidden;
+  display:inline-flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.10);
+}
+.logo-wrap img{width:100%;height:100%;object-fit:contain;display:block}
+.logo-wrap .logo-fallback{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:11px;line-height:1;letter-spacing:.5px;
+}
+.logo-wrap-sm{width:20px;height:20px;border-radius:3px}
+
+.reg-foot{border-top:1px solid var(--yellow);background:var(--yellow-soft);
+  padding:9px 14px;display:flex;gap:24px;font-size:11px;flex-wrap:wrap}
+.reg-foot .k{color:var(--text-dim)}.reg-foot .v{color:var(--yellow);font-weight:600}
+.reg-foot .flag{margin-left:auto;color:var(--orange)}
+.filter-bar{padding:6px 12px;border-bottom:1px solid var(--hairline-strong);
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.filter-btn{padding:3px 10px;font-family:var(--mono);font-size:10px;letter-spacing:1px;
+  background:transparent;border:1px solid var(--hairline-strong);color:var(--text-dim);cursor:pointer;text-transform:uppercase}
+.filter-btn:hover{border-color:var(--yellow);color:var(--yellow)}
+.filter-btn.active{background:var(--yellow-soft);border-color:var(--yellow);color:var(--yellow)}
+.filter-search{flex:1;min-width:120px;padding:3px 8px;font-family:var(--mono);font-size:10px;
+  background:transparent;border:1px solid var(--hairline-strong);color:var(--text);outline:none}
+.filter-search:focus{border-color:var(--yellow)}
+.filter-search::placeholder{color:var(--text-mute)}
+.burn-head{padding:14px 16px 4px;display:flex;align-items:baseline;gap:10px}
+.burn-head .big{font-family:var(--display);font-size:28px;font-weight:700;color:var(--yellow);letter-spacing:-.5px}
+.burn-head .per{font-size:10px;color:var(--text-dim);letter-spacing:1.4px}
+.burn-head .mom{margin-left:auto;font-size:11px;color:var(--orange)}
+.burn-chart{flex:1;padding:4px 8px 8px;min-height:0;display:flex;align-items:stretch}
+.alloc{list-style:none;margin:0;padding:12px 16px;display:flex;flex-direction:column;gap:9px;flex:1;overflow:auto}
+.alloc-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:1.2px;color:var(--text-dim);margin-bottom:3px}
+.alloc-name{font-weight:600}.alloc-val{color:var(--text)}
+.alloc-bar{font-size:11px;line-height:1;letter-spacing:0;white-space:nowrap;overflow:hidden}
+.alloc-bar-empty{color:var(--surface3)}
+.flagged-list{list-style:none;margin:0;padding:8px 0;flex:1;overflow:auto}
+.flag-row{padding:8px 14px;display:flex;align-items:center;gap:10px;font-size:11px;border-bottom:1px dashed var(--hairline)}
+.flag-row:last-child{border-bottom:none}
+.led{width:8px;height:8px;background:var(--orange);box-shadow:0 0 6px var(--orange);animation:bl 1.2s steps(2) infinite;flex:0 0 auto}
+@keyframes bl{50%{opacity:.25}}
+.flag-name{font-weight:600;flex:1}
+.flag-use{color:var(--text-dim)}
+.flag-cost{color:var(--orange);font-weight:600}
+.flagged-foot{border-top:1px solid var(--orange);background:var(--orange-soft);
+  padding:8px 14px;font-size:11px;color:var(--orange);display:flex;justify-content:space-between}
+.flagged-foot .v{font-weight:700}
+/* ── Monthly cost span header ── */
+.hdr-cost th.hdr-cost{border-bottom:2px solid var(--yellow);background:rgba(255,230,0,0.04);text-align:center}
+.hdr-cost-sub th{font-size:9px;letter-spacing:1.2px;padding:6px 8px;color:var(--text-mute);font-weight:400}
+.hdr-cost-sub th:first-child{border-left:1px solid var(--yellow-soft)}
+
+.bar-bot{border:1px solid var(--hairline-strong);background:var(--surface);
+  padding:7px 14px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;
+  font-size:10.5px;letter-spacing:1.2px;color:var(--text-dim)}
+.key{display:flex;gap:6px}
+.key b{padding:1px 6px;background:var(--yellow);color:var(--bg);font-weight:700}
+.bar-bot .spacer{flex:1}
+.bar-bot .ready{color:var(--yellow)}
+.btn-sync{padding:4px 12px;font-family:var(--mono);font-size:10px;letter-spacing:1.2px;
+  background:transparent;border:1px solid var(--yellow);color:var(--yellow);cursor:pointer;text-transform:uppercase}
+.btn-sync:hover{background:var(--yellow-soft)}
+.btn-sync:disabled{opacity:.4;cursor:not-allowed}
+.state-row td{text-align:center;padding:32px 14px;color:var(--text-mute);letter-spacing:1px;font-size:11px}
+.spinner{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:1080px){.grid{grid-template-columns:1fr}.col-right{grid-template-rows:none}.pane--burn{min-height:260px}}
+@media(max-width:560px){.bar-top{flex-wrap:wrap}.bar-top .meta{order:3;flex-basis:100%;border-top:1px solid var(--yellow)}table.reg .c-plan,table.reg .c-since{display:none}}
+</style>
+</head>
+<body>
+<main class="term" id="app">
+  <header class="bar-top">
+    <div class="brand"><span class="sq"></span>SUBS.TERMINAL</div>
+    <div class="ver">v1.0</div>
+    <div class="meta">
+      <span class="ok" id="status-dot">● LIVE</span>
+      <span id="sync-ago">SYNC --:-- AGO</span>
+      <span id="meta-counts">-- ACTIVE / -- FLAGGED</span>
+      <span id="data-span" style="
+        padding:2px 10px;border-radius:3px;
+        background:rgba(255,230,0,0.12);border:1px solid rgba(255,230,0,0.3);
+        color:var(--yellow);font-size:10px;letter-spacing:1px;font-weight:600;
+        white-space:nowrap
+      ">DATA: ···</span>
+      <span class="spacer"></span>
+      <button class="btn-sync" id="btn-sync" onclick="triggerSync()">↻ SYNC</button>
+      <span>USER:</span><span class="user">JK@LOCAL</span>
+    </div>
+    <div class="mtd">
+      <span class="lbl">BURN</span>
+      <span class="num" id="mtd-total">$---.--</span>
+      <span class="delta" id="mtd-yearly">▲ $----/YR</span>
+      <span class="lbl" id="snapshot-label" style="margin-left:12px;font-size:9px;color:var(--text-mute);white-space:nowrap">SNAP: --</span>
+    </div>
+  </header>
+  <div class="ticker"><div class="track" id="ticker-track">loading…</div></div>
+  <div class="grid">
+    <section class="pane register" aria-label="Subscription register">
+      <div class="pane-rule">
+        <span class="t">▸ REGISTER · ALL SUBSCRIPTIONS</span>
+        <span class="hint">SORT: SPEND ▼ &nbsp; [F2] FILTER</span>
+      </div>
+      <div class="filter-bar">
+        <button class="filter-btn active" onclick="setFilter('all',this)">ALL</button>
+        <button class="filter-btn" onclick="setFilter('active',this)">ACTIVE</button>
+        <button class="filter-btn" onclick="setFilter('idle',this)">IDLE</button>
+        <button class="filter-btn" onclick="setFilter('cloud',this)" style="color:#7aa9ff;border-color:#7aa9ff33">CLOUD</button>
+        <button class="filter-btn" onclick="setFilter('ai',this)" style="color:#ffe600;border-color:#ffe60033">AI</button>
+        <button class="filter-btn" onclick="setFilter('dev_tools',this)" style="color:#a78bfa;border-color:#a78bfa33">DEV</button>
+        <button class="filter-btn" onclick="setFilter('streaming',this)" style="color:#ff6b1a;border-color:#ff6b1a33">STREAM</button>
+        <button class="filter-btn" onclick="setFilter('music',this)" style="color:#5fe39a;border-color:#5fe39a33">MUSIC</button>
+        <input class="filter-search" id="search-input" placeholder="SEARCH…" oninput="renderTable()" />
+      </div>
+      <div class="reg-scroll">
+        <table class="reg">
+          <thead>
+            <tr>
+              <th onclick="sortBy('idx')">#</th>
+              <th onclick="sortBy('service_name')">SERVICE</th>
+              <th class="c-plan">PLAN</th>
+              <th onclick="sortBy('category')">CAT</th>
+              <th class="r" onclick="sortBy('cost')">MONTHLY COST</th>
+              <th class="r" onclick="sortBy('yearly_cost')">TOTAL PAID</th>
+              <th class="r c-total-spent">EST. TOTAL</th>
+              <th>USE</th>
+              <th onclick="sortBy('start_date')">SINCE</th>
+              <th onclick="sortBy('status')">STATUS</th>
+            </tr>
+          </thead>
+          <tbody id="reg-tbody">
+            <tr class="state-row"><td colspan="10"><span class="spinner">⟳</span> LOADING…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="reg-foot">
+        <span class="k">ROWS: <span class="v" id="foot-rows">--</span></span>
+        <span class="k">SUM/MO: <span class="v" id="foot-mo">$---.--</span></span>
+        <span class="k">SUM/YR: <span class="v" id="foot-yr">$----</span></span>
+        <span class="k">AVG: <span class="v" id="foot-avg">$--.--</span></span>
+        <span class="flag" id="foot-flagged">FLAGGED: --</span>
+      </div>
+    </section>
+    <aside class="col-right">
+      <section class="pane pane--muted pane--burn" aria-label="Burn rate">
+        <div class="pane-rule"><span class="t">▸ BURN RATE · TOP 10</span><span class="hint" style="font-size:8px" id="burn-hint">ALL CURRENCIES</span></div>
+        <div class="burn-head">
+          <span class="big" id="burn-total">---</span>
+          <span class="per">CZK TOTAL PAID</span>
+          <span class="mom" id="burn-yr">--- CZK / MO AVG</span>
+        </div>
+        <div class="burn-chart" style="display:block;overflow-y:auto">
+          <div id="burn-top10" style="padding:4px 8px 8px;display:flex;flex-direction:column;gap:6px;font-size:11px">
+            <span style="color:var(--text-mute);padding:12px 4px">LOADING…</span>
+          </div>
+        </div>
+      </section>
+      <section class="pane pane--muted" aria-label="Allocation by category">
+        <div class="pane-rule"><span class="t">▸ ALLOCATION BY CATEGORY</span><span class="hint">∑ 100%</span></div>
+        <ul class="alloc" id="alloc-list">
+          <li style="color:var(--text-mute);font-size:11px;padding:12px 16px">LOADING…</li>
+        </ul>
+      </section>
+      <section class="pane" aria-label="Flagged idle subscriptions" style="border-color:var(--orange)">
+        <div class="pane-rule" style="border-bottom-color:var(--orange);background:var(--orange-soft);color:var(--orange)">
+          <span class="t">⚠ FLAGGED · IDLE &gt; 30D</span>
+          <span class="hint" style="color:var(--orange)">[ENTER] CANCEL</span>
+        </div>
+        <ul class="flagged-list" id="flagged-list">
+          <li style="color:var(--text-mute);font-size:11px;padding:12px 14px">LOADING…</li>
+        </ul>
+        <div class="flagged-foot">
+          <span>POTENTIAL SAVINGS</span>
+          <span class="v" id="flagged-savings">$---.-- / MO</span>
+        </div>
+      </section>
+      <section class="pane pane--muted" id="monthly-trend" style="display:none"></section>
+      <section class="pane pane--muted" id="sync-status" style="display:none"></section>
+    </aside>
+  </div>
+  <footer class="bar-bot">
+    <span class="key"><b>F2</b>FILTER</span>
+    <span class="key"><b>F5</b>REFRESH</span>
+    <span class="key"><b>F8</b>EXPORT</span>
+    <span class="spacer"></span>
+    <span>● CONN · TLS1.3 · AES-256</span>
+    <span class="ready" id="bot-ready">READY_</span>
+  </footer>
+</main>
+
+<script>
+const API = '';
+let allSubs = [], lastSync = null, sortKey = 'cost', sortDir = 'desc', activeFilter = 'all';
+
+const CAT_COLOR = {
+  cloud:'#7aa9ff', ai:'#ffe600', dev_tools:'#a78bfa', streaming:'#ff6b1a',
+  music:'#5fe39a', music_tools:'#00d4aa', design:'#f472b6', productivity:'#67e8f9',
+  security:'#fbbf24', gaming:'#ff4d4d', fitness:'#34d399', education:'#60a5fa',
+  social:'#c084fc', entertainment:'#fb923c', news:'#94a3b8', other:'#8a8a8e',
+};
+
+// ── Service name → domain mapping (for favicon lookup) ─────
+// The order matters: first match wins. Add more entries to cover
+// more services. Keys are matched as substrings (case-insensitive).
+const SVC_DOMAIN = {
+  // Big tech
+  'amazon web services':'amazon.com', 'aws':'amazon.com',
+  'google':'google.com', 'google cloud':'cloud.google.com', 'gcp':'cloud.google.com',
+  'microsoft':'microsoft.com', 'azure':'microsoft.com', 'office 365':'microsoft.com', 'xbox':'xbox.com',
+  'apple':'apple.com', 'itunes':'apple.com', 'icloud':'apple.com', 'apple tv':'apple.com',
+  'meta':'meta.com', 'meta platforms':'meta.com', 'facebook':'facebook.com', 'instagram':'instagram.com', 'whatsapp':'whatsapp.com', 'oculus':'meta.com',
+  'twitter':'x.com', 'x.com':'x.com', 'linkedin':'linkedin.com',
+  'nvidia':'nvidia.com', 'amd':'amd.com', 'intel':'intel.com',
+  'samsung':'samsung.com', 'sony':'sony.com', 'sony interactive':'playstation.com',
+  'playstation':'playstation.com', 'playstation plus':'playstation.com', 'psn':'playstation.com',
+  'nintendo':'nintendo.com',
+  // AI
+  'openai':'openai.com', 'chatgpt':'openai.com', 'gpt':'openai.com',
+  'anthropic':'anthropic.com', 'claude':'anthropic.com',
+  'midjourney':'midjourney.com', 'cursor':'cursor.sh', 'cline':'cline.bot',
+  'perplexity':'perplexity.ai', 'huggingface':'huggingface.co', 'hugging face':'huggingface.co',
+  'replicate':'replicate.com', 'elevenlabs':'elevenlabs.io', 'eleven labs':'elevenlabs.io',
+  'openrouter':'openrouter.ai', 'runway':'runwayml.com', 'stability':'stability.ai',
+  // Dev tools
+  'github':'github.com', 'gitlab':'gitlab.com', 'bitbucket':'bitbucket.org',
+  'vercel':'vercel.com', 'netlify':'netlify.com', 'render':'render.com',
+  'figma':'figma.com', 'notion':'notion.so', 'linear':'linear.app',
+  'slack':'slack.com', 'discord':'discord.com', 'zoom':'zoom.us',
+  'jetbrains':'jetbrains.com', 'pycharm':'jetbrains.com', 'intellij':'jetbrains.com',
+  'docker':'docker.com', 'kubernetes':'kubernetes.io',
+  // Cloud
+  'digitalocean':'digitalocean.com', 'linode':'linode.com', 'vultr':'vultr.com',
+  'cloudflare':'cloudflare.com', 'supabase':'supabase.com',
+  'firebase':'firebase.google.com', 'heroku':'heroku.com',
+  'aws':'amazon.com', 'amazon':'amazon.com',
+  'sentry':'sentry.io', 'datadog':'datadoghq.com', 'new relic':'newrelic.com',
+  // Streaming
+  'netflix':'netflix.com', 'disney':'disneyplus.com', 'disney+':'disneyplus.com',
+  'hbo':'max.com', 'max':'max.com', 'paramount':'paramountplus.com',
+  'hulu':'hulu.com', 'peacock':'peacocktv.com', 'prime video':'primevideo.com',
+  'youtube':'youtube.com', 'twitch':'twitch.tv',
+  // Music
+  'spotify':'spotify.com', 'apple music':'music.apple.com',
+  'tidal':'tidal.com', 'soundcloud':'soundcloud.com', 'beatport':'beatport.com',
+  'bandcamp':'bandcamp.com', 'native instruments':'native-instruments.com',
+  'native-instruments':'native-instruments.com',
+  'ableton':'ableton.com', 'fl studio':'image-line.com', 'logic':'apple.com',
+  // Productivity
+  '1password':'1password.com', 'lastpass':'lastpass.com', 'bitwarden':'bitwarden.com',
+  'dropbox':'dropbox.com', 'google drive':'drive.google.com',
+  'adobe':'adobe.com', 'canva':'canva.com',
+  // Payments / Shopping
+  'paypal':'paypal.com', 'stripe':'stripe.com', 'wise':'wise.com',
+  'vinted':'vinted.com', 'ebay':'ebay.com', 'aliexpress':'aliexpress.com',
+  'amazon prime':'amazon.com', 'patreon':'patreon.com',
+  'kofi':'ko-fi.com', 'buymeacoffee':'buymeacoffee.com',
+  // Travel
+  'airbnb':'airbnb.com', 'booking':'booking.com', 'expedia':'expedia.com',
+  // Other
+  'railway':'railway.app', 'fly':'fly.io', 'render':'render.com',
+  'mongodb':'mongodb.com', 'redis':'redis.io', 'postgres':'postgresql.org',
+  'planeto':'planeto.com',
+};
+
+// Fallback colors for monogram when no logo available
+const SVC_COLOR = {
+  aws:'#ff9900', netflix:'#e50914', spotify:'#1db954', github:'#e6e6e6',
+  google:'#4285f4', microsoft:'#00a4ef', openai:'#10a37f', anthropic:'#cc4400',
+  vercel:'#ffffff', figma:'#f24e1e', notion:'#ffffff', slack:'#4a154b',
+  digitalocean:'#0080ff', supabase:'#3ecf8e', sentry:'#a07cff',
+  elevenlabs:'#f5a623', linear:'#8a8df0', cloudflare:'#f48120',
+  tidal:'#ffffff', soundcloud:'#ff7700', '1password':'#0572ec',
+  'disney+':'#0d6cff', max:'#a020f0', beatport:'#00ff00',
+};
+
+function getBrandDomain(name) {
+  const n = name.toLowerCase();
+  for (const [k, v] of Object.entries(SVC_DOMAIN)) {
+    if (n.includes(k)) return v;
+  }
+  return null;
+}
+
+// Heuristic: derive a plausible domain from the name for the Clearbit lookup.
+// "Meta Platforms" -> "metaplatforms.com", "Vinted" -> "vinted.com", etc.
+function getDerivedDomain(name) {
+  if (!name) return null;
+  // Strip common suffixes / words that don't help the domain
+  const cleaned = name.toLowerCase()
+    .replace(/(inc|llc|ltd|gmbh|s\.?a\.?|s\.?r\.?o\.?|corp|corporation|company|co|ag|plc|bv|oy|ab|as|app|service|services|the)/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+  if (!cleaned) return null;
+  return `${cleaned}.com`;
+}
+
+function getFallbackColor(name) {
+  const n = name.toLowerCase();
+  for (const [k, v] of Object.entries(SVC_COLOR)) {
+    if (n.includes(k)) return v;
+  }
+  let h = 0;
+  for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) & 0xffffffff;
+  return `hsl(${Math.abs(h) % 360},55%,55%)`;
+}
+
+function isDark(hex) {
+  if (!hex || !hex.startsWith('#')) return true;
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return (r*299+g*587+b*114)/1000 < 128;
+}
+
+function mono(name) { return name.trim().substring(0,2).toUpperCase(); }
+
+/**
+ * Render a logo icon. Tries (in order):
+ *   1) Google Favicon V2 — works for ~every active site, returns the
+ *      actual favicon/brand mark for the domain (PlayStation, Meta,
+ *      Vinted, obscure SaaS — all have one).
+ *   2) sub.icon_url from API (often a Clearbit URL we already tried)
+ *   3) logo.clearbit.com/<mapped-domain>
+ *   4) logo.clearbit.com/<derived-domain>
+ *   5) Colored monogram with the first letter of the name.
+ *
+ * size: 'md' (28px) or 'sm' (20px)
+ */
+function logoHtml(sub, size) {
+  const isSmall  = size === 'sm';
+  const px       = isSmall ? 20 : 28;
+  const sizeClass= isSmall ? 'logo-wrap logo-wrap-sm' : 'logo-wrap';
+  const fallbackBg = getFallbackColor(sub.service_name);
+  const fallbackFg = isDark(fallbackBg) ? '#fff' : '#0a0a0b';
+  // Use first letter only (clearer at small sizes than 2 letters)
+  const m = (sub.service_name || '?').trim().charAt(0).toUpperCase();
+  const monoFs = isSmall ? 12 : 16;
+
+  // Build the candidate URL list, in priority order.
+  const cands = [];
+  const mapped = getBrandDomain(sub.service_name);
+  const domain = mapped || getDerivedDomain(sub.service_name);
+
+  if (domain) {
+    // PRIMARY: Google Favicon V2 — high hit rate, official favicon.
+    // sz=128 gives a crisp 128px image that downsamples cleanly to 28px.
+    cands.push(`https://www.google.com/s2/favicons?domain=${domain}&sz=128`);
+  }
+  if (sub.icon_url && !cands.includes(sub.icon_url)) cands.push(sub.icon_url);
+  if (mapped) {
+    const cb = `https://logo.clearbit.com/${mapped}`;
+    if (!cands.includes(cb)) cands.push(cb);
+  }
+  // Try www.<derived> for one more shot if mapped lookup failed
+  if (!mapped) {
+    const derived = getDerivedDomain(sub.service_name);
+    if (derived) {
+      const cb2 = `https://logo.clearbit.com/${derived}`;
+      if (!cands.includes(cb2)) cands.push(cb2);
+    }
+  }
+
+  if (cands.length === 0) {
+    return `<span class="${sizeClass}" style="background:${fallbackBg}">
+      <span class="logo-fallback" style="color:${fallbackFg};font-size:${monoFs}px">${m}</span>
+    </span>`;
+  }
+
+  const id = 'logo_' + sub.id;
+  const candsJson = JSON.stringify(cands);
+  return `<span class="${sizeClass}" style="background:#fff"
+    id="${id}"
+    data-fb-bg="${fallbackBg}" data-fb-fg="${fallbackFg}" data-mono="${m}" data-fs="${monoFs}">
+    <img width="${px}" height="${px}"
+      data-cands="${candsJson.replace(/"/g, '&quot;')}" data-idx="0"
+      src="${cands[0]}"
+      onload="this.parentElement.style.background='#fff'"
+      onerror="logoChain(this)"
+      style="display:block;object-fit:contain;border-radius:3px">
+  </span>`;
+}
+
+// Try the next candidate URL; on final failure, render the monogram.
+function logoChain(img) {
+  const cands = JSON.parse(img.dataset.cands || '[]');
+  const next = parseInt(img.dataset.idx || '0', 10) + 1;
+  if (next < cands.length && cands[next]) {
+    img.dataset.idx = String(next);
+    img.src = cands[next];
+    return;
+  }
+  // No more candidates — swap to monogram fallback.
+  const el = img.parentElement;
+  if (!el) return;
+  el.style.background = el.dataset.fbBg;
+  const fs = el.dataset.fs || 16;
+  el.innerHTML = `<span class="logo-fallback" style="color:${el.dataset.fbFg};font-size:${fs}px;font-weight:800">${el.dataset.mono}</span>`;
+}
+
+function logoFallback(id) {
+  // Legacy entrypoint — now handled by logoChain() inside the span.
+  const el = document.getElementById(id);
+  if (!el) return;
+  const img = el.querySelector('img');
+  if (img) { img.src = ''; }
+}
+
+// FX to CZK approximate rates
+const FX_TO_CZK = {CZK:1.0, EUR:25.0, USD:23.0, GBP:29.0};
+
+function toCZK(amount, currency) {
+  return amount * (FX_TO_CZK[(currency||'CZK').toUpperCase()] || 23.0);
+}
+
+function monthly(sub) {
+  // Prefer real wallet payment data over parser-guessed cost
+  const spend = getWalletSpend(sub.id);
+  if (spend && spend.avg_monthly_czk > 0) return spend.avg_monthly_czk;
+  if (!sub.billing_cycle || sub.billing_cycle === 'one-time') return 0;
+  let c = sub.cost || 0;
+  if (sub.billing_cycle === 'yearly')  c = c / 12;
+  if (sub.billing_cycle === 'weekly')  c = c * 4.33;
+  if (sub.billing_cycle === 'daily')   c = c * 30;
+  return toCZK(c, sub.currency);
+}
+
+function usageBar(sub) {
+  if (sub.status === 'idle') {
+    const f = Math.floor(Math.random() * 2);
+    return `<span class="bar bar--warn">${'█'.repeat(f)}${'░'.repeat(8-f)}</span>`;
+  }
+  const pct = Math.min(95, Math.max(30, Math.floor(monthly(sub)*3+40)));
+  const f = Math.round(pct/12.5);
+  return `<span class="bar">${'█'.repeat(Math.min(8,f))}${'░'.repeat(Math.max(0,8-f))}</span>`;
+}
+
+function fmtSince(d) { return d ? d.substring(0,7) : '—'; }
+
+/** Format YYYY-MM as "Mar '26" */
+function fmtMonth(ym) {
+  if (!ym) return null;
+  const [y, m] = ym.split('-');
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${names[parseInt(m,10)-1]} '${y.slice(2)}`;
+}
+
+/** Months between dateStr (YYYY-MM-DD) and today, minimum 1. */
+function monthsSince(dateStr) {
+  if (!dateStr) return null;
+  const start = new Date(dateStr);
+  const now   = new Date();
+  const m = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  return Math.max(1, m);
+}
+
+/**
+ * Estimated lifetime total spend in CZK.
+ * Uses avg_monthly_czk (wallet-based) if available, else parser monthly cost.
+ * Multiplied by months since start_date to give lifetime estimate.
+ * For wallet-confirmed subs we take the max(wallet_total, monthly × months)
+ * so the real payments are never hidden.
+ */
+function totalEstCzk(sub) {
+  const mo = monthly(sub);           // avg monthly in CZK (wallet-preferred)
+  if (mo === 0) return null;
+  const spend = getWalletSpend(sub.id);
+  const months = monthsSince(sub.start_date);
+  if (!months) return spend ? Math.round(spend.total_czk) : null;
+  const estimated = Math.round(mo * months);
+  // If we have real wallet data, return whichever is larger (actual vs estimate)
+  if (spend && spend.total_czk > 0) {
+    return Math.max(estimated, Math.round(spend.total_czk));
+  }
+  return estimated;
+}
+
+function extractPlan(sub) {
+  // Prefer the dedicated plan_name column; fall back to parsing notes
+  if (sub && sub.plan_name) return sub.plan_name;
+  const notes = sub && sub.notes ? sub.notes : sub; // backwards compat if called with string
+  if (!notes) return null;
+  const m = String(notes).match(/Plan:\s*([^\n,]+)/i);
+  return m ? m[1].trim() : null;
+}
+
+function filteredSubs() {
+  const search = (document.getElementById('search-input')?.value||'').toLowerCase();
+  return allSubs.filter(s => {
+    const mf = activeFilter==='all'?true:activeFilter==='active'?s.status==='active':activeFilter==='idle'?s.status==='idle':s.category===activeFilter;
+    const ms = !search||s.service_name.toLowerCase().includes(search)||(s.category||'').toLowerCase().includes(search);
+    return mf && ms;
+  });
+}
+
+function sortedSubs(arr) {
+  return [...arr].sort((a,b) => {
+    let va,vb;
+    if(sortKey==='cost'){va=monthly(a);vb=monthly(b);}
+    else if(sortKey==='service_name'){va=a.service_name.toLowerCase();vb=b.service_name.toLowerCase();}
+    else if(sortKey==='category'){va=a.category;vb=b.category;}
+    else if(sortKey==='status'){va=a.status;vb=b.status;}
+    else if(sortKey==='start_date'){va=a.start_date||'';vb=b.start_date||'';}
+    else{va=a.id;vb=b.id;}
+    if(va<vb) return sortDir==='asc'?-1:1;
+    if(va>vb) return sortDir==='asc'?1:-1;
+    return 0;
+  });
+}
+
+function renderTable() {
+  const tbody = document.getElementById('reg-tbody');
+  const subs  = sortedSubs(filteredSubs());
+  if (!subs.length) { tbody.innerHTML='<tr class="state-row"><td colspan="10">NO RESULTS</td></tr>'; updateFooter([]); return; }
+
+  tbody.innerHTML = subs.map((s,i) => {
+    const mo       = monthly(s);
+    const flagged  = s.status === 'idle';
+    const catColor = CAT_COLOR[s.category]||'#8a8a8e';
+    const catLabel = (s.category||'other').replace('_',' ').toUpperCase();
+    const dot      = flagged ? '<span class="dot dot--warn"></span>FLAGGED' : '<span class="dot dot--ok"></span>ACTIVE';
+    const spend = getWalletSpend(s.id);
+    const hasSpend = spend && spend.payments > 0;
+    const _totalEst = totalEstCzk(s);
+    const months = monthsSince(s.start_date);
+    const totalDisplay = _totalEst
+      ? Math.round(_totalEst / 100) * 100 + ' CZK'   // round to nearest 100 for estimates
+      : '—';
+    const totalTitle = _totalEst && months
+      ? `Est. ${months}mo × ${Math.round(mo)} CZK/mo${hasSpend ? ` · wallet confirmed: ${Math.round(spend.total_czk)} CZK` : ''}`
+      : '';
+    // Last payment date: prefer wallet record, fall back to API last_payment_date field
+    const lastDateRaw = (hasSpend && spend.last_payment)
+      ? spend.last_payment.substring(0, 7)
+      : (s.last_payment_date ? s.last_payment_date.substring(0, 7) : null);
+    const lastDate = lastDateRaw || '—';
+    const lastPaidHtml = lastDateRaw
+      ? `<span style="display:block;font-size:9px;color:var(--text-mute);letter-spacing:.3px;margin-top:1px">↳ ${fmtMonth(lastDateRaw)}</span>`
+      : '';
+    // SINCE: use first wallet record date when available (most accurate), else start_date
+    const sinceDate = hasSpend && spend.first_payment ? spend.first_payment.substring(0,7) : fmtSince(s.start_date);
+    const sparklineHtml = hasSpend ? renderSparkline(s.id, spend.dates, spend.total_czk) : usageBar(s);
+    const _usd = toUsd(mo, s.currency);
+    const _czk = s.currency === 'CZK' ? mo : (s.currency === 'USD' ? mo / 0.043 : 0);
+    const _eur = s.currency === 'EUR' ? mo : 0;
+
+    return `<tr class="reg-row${flagged?' is-flagged':''}" data-id="${s.id}">
+      <td class="c-idx">${String(i+1).padStart(2,'0')}</td>
+      <td class="c-svc"><span class="svc">${logoHtml(s,'md')}<span class="svc-name">${s.service_name.toUpperCase()}</span>${s.reconciliation_flag?'<span class="recon-flag" title="Cost mismatch: email vs bank >20%">⚠</span>':''}</span></td>
+      <td class="c-plan">${extractPlan(s)||'—'}</td>
+      <td class="c-cat" style="color:${catColor}">${catLabel}</td>
+      <td class="c-mo" title="${s.cost} ${s.currency||'CZK'} ${s.billing_cycle}">${Math.round(mo)} CZK${walletCostHtml(s)}${lastPaidHtml}</td>
+      <td class="c-mo-sub">${(spendMap[s.id]&&spendMap[s.id].total_czk)?Math.round(spendMap[s.id].total_czk).toLocaleString()+' CZK':'~'+Math.round(mo*12)+' CZK'}</td>
+      <td class="c-total-spent" style="text-align:right" title="${totalTitle}">${totalDisplay}${hasSpend ? '<span style="display:block;font-size:9px;color:var(--accent)">✓ WALLET</span>' : ''}</td>
+      <td class="c-use">${usageBar(s)}</td>
+      <td class="c-since">${fmtSince(s.start_date)}</td>
+      <td class="c-status">${dot}</td>
+    </tr>`;
+  }).join('');
+  updateFooter(subs);
+}
+
+function updateFooter(subs) {
+  const total   = subs.reduce((s,x)=>s+monthly(x),0);
+  const flagged = subs.filter(x=>x.status==='idle').length;
+  document.getElementById('foot-rows').textContent    = subs.length;
+  document.getElementById('foot-mo').textContent      = Math.round(total)+' CZK';
+  document.getElementById('foot-yr').textContent      = Math.round(total*12)+' CZK';
+  document.getElementById('foot-avg').textContent     = subs.length?Math.round(total/subs.length)+' CZK':'0 CZK';
+  document.getElementById('foot-flagged').textContent = 'FLAGGED: '+flagged;
+}
+
+function renderTicker(subs) {
+  const top  = [...subs].sort((a,b)=>monthly(b)-monthly(a)).slice(0,20);
+  const text = top.map(s=>`${s.service_name.toUpperCase()}  ${monthly(s).toFixed(2)} ${s.currency||''}  ${s.status==='idle'?'◉ IDLE':'● ACTIVE'}`).join('   ◇   ');
+  document.getElementById('ticker-track').textContent = text+'   ◇   '+text;
+}
+
+function renderAllocation(subs) {
+  const totals={};let grand=0;
+  subs.forEach(s=>{const mo=monthly(s);totals[s.category]=(totals[s.category]||0)+mo;grand+=mo;});
+  const sorted=Object.entries(totals).sort((a,b)=>b[1]-a[1]);
+  const BAR_W=38;
+  const html=sorted.map(([cat,amt])=>{
+    const pct=grand?amt/grand:0;const filled=Math.round(pct*BAR_W);
+    const color=CAT_COLOR[cat]||'#8a8a8e';const label=cat.replace('_',' ').toUpperCase();
+    return `<li class="alloc-row"><div class="alloc-head"><span class="alloc-name" style="color:${color}">${label}</span><span class="alloc-val">${amt.toFixed(2)} · ${(pct*100).toFixed(1)}%</span></div><div class="alloc-bar" style="color:${color}">${'█'.repeat(filled)}<span class="alloc-bar-empty">${'░'.repeat(BAR_W-filled)}</span></div></li>`;
+  }).join('');
+  document.getElementById('alloc-list').innerHTML=html||'<li style="color:var(--text-mute);font-size:11px;padding:12px 16px">NO DATA</li>';
+}
+
+function renderFlagged(subs) {
+  const flagged=subs.filter(s=>s.status==='idle').sort((a,b)=>monthly(b)-monthly(a));
+  const savings=flagged.reduce((s,x)=>s+monthly(x),0);
+  if(!flagged.length){
+    document.getElementById('flagged-list').innerHTML='<li style="color:var(--green);font-size:11px;padding:12px 14px">✓ NO FLAGGED SUBSCRIPTIONS</li>';
+    document.getElementById('flagged-savings').textContent='0.00 / MO';return;
+  }
+  document.getElementById('flagged-list').innerHTML=flagged.slice(0,8).map(s=>`
+    <li class="flag-row" data-id="${s.id}">
+      <span class="led"></span>
+      ${logoHtml(s,'sm')}
+      <span class="flag-name">${s.service_name.toUpperCase()}</span>
+      <span class="flag-use">— USE</span>
+      <span class="flag-cost">−${monthly(s).toFixed(2)} ${s.currency||''}/MO</span>
+    </li>`).join('');
+  document.getElementById('flagged-savings').textContent=`${savings.toFixed(2)}/MO · ${Math.round(savings*12)}/YR`;
+}
+
+// ── Wallet spend map: sub_id → {total_spent, payments, last_payment, dates} ──
+let spendMap = {};
+
+function getWalletSpend(subId) {
+  return spendMap[subId] || null;
+}
+
+function walletCostHtml(s) {
+  if (!s.confirmed_by_wallet) return '';
+  const actual = s.actual_cost ? Math.round(s.actual_cost) : null;
+  if (!actual) return '';
+  return `<span style="display:block;font-size:9px;color:var(--text-mute);letter-spacing:.5px">ACTUAL ${actual}</span>`;
+}
+
+/** Render a tiny sparkline from wallet dates. Just shows dots for months with payments. */
+function renderSparkline(subId, dates, totalSpent) {
+  if (!dates || !dates.length) {
+    return `<span class="bar" style="color:var(--text-mute);font-size:9px">NO DATA</span>`;
+  }
+  // Group by month, show up to 12 dots
+  const months = {};
+  dates.forEach(d => { months[d] = (months[d] || 0) + 1; });
+  const keys = Object.keys(months).sort().slice(-12);
+  const max = Math.max(...Object.values(months), 1);
+  const dots = keys.map(m => {
+    const h = Math.round((months[m] / max) * 14);
+    return '<span style="display:inline-block;width:4px;height:' + Math.max(2, h) + 'px;background:var(--yellow);opacity:' + (0.3 + (months[m]/max) * 0.7) + ';margin:0 1px;border-radius:1px" title="' + m + ': ' + months[m] + 'x"></span>';
+  }).join('');
+  return '<span style="display:inline-flex;align-items:flex-end;gap:0;height:16px">' + dots + '</span>';
+}
+
+// ── Simple FX rates (matching backend, for client-side formatting) ──
+const FX_RATES = {"CZK": 0.043, "EUR": 1.08, "USD": 1.0, "GBP": 1.27,
+  "PLN": 0.25, "CHF": 1.12, "CAD": 0.73, "AUD": 0.66, "JPY": 0.0064};
+function toUsd(val, cur) {
+  const r = FX_RATES[(cur || 'USD').toUpperCase()] || 0;
+  return (val || 0) * r;
+}
+function fmtMoney(val, cur) {
+  const c = (cur || 'USD').toUpperCase();
+  if (c === 'CZK') return `${val.toFixed(0)} Kč`;
+  if (c === 'EUR') return `€${val.toFixed(2)}`;
+  if (c === 'USD') return `$${val.toFixed(2)}`;
+  return `${val.toFixed(2)} ${c}`;
+}
+
+/** Render a horizontal bar chart of the top 10 services by monthly cost. */
+function renderBurnRate() {
+  const el = document.getElementById('burn-top10');
+  if (!el || !allSubs.length) return;
+
+  // Top 10 by monthly cost (in their own currency, we normalize to USD for sorting)
+  const top10 = [...allSubs]
+    .filter(s => s.billing_cycle !== 'one-time' && s.status !== 'cancelled')
+    .map(s => ({ ...s, _mo: monthly(s), _usd: toUsd(monthly(s), s.currency) }))
+    .sort((a, b) => b._usd - a._usd)
+    .slice(0, 10);
+
+  const maxUsd = top10.length ? top10[0]._usd : 1;
+  const total = top10.reduce((s, x) => s + x._usd, 0);
+
+  const bars = top10.map((s, i) => {
+    const pct = (s._usd / maxUsd) * 100;
+    const share = total > 0 ? (s._usd / total) * 100 : 0;
+    const color = getFallbackColor(s.service_name);
+    const serviceShort = s.service_name.toUpperCase().substring(0, 22);
+
+    return `<div style="display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:center;min-height:22px">
+      <span style="color:var(--text-mute);font-size:10px;text-align:right">${i + 1}</span>
+      <div style="position:relative;height:18px;border-radius:3px;overflow:hidden;
+        background:rgba(255,255,255,0.04)">
+        <div style="position:absolute;top:0;left:0;height:100%;width:${pct.toFixed(1)}%;
+          background:${color};opacity:0.7;border-radius:3px;transition:width .3s"></div>
+        <span style="position:relative;padding:0 6px;line-height:18px;font-size:10px;
+          font-weight:600;letter-spacing:.3px;white-space:nowrap;overflow:hidden;
+          text-overflow:ellipsis;display:block;color:#fff;mix-blend-mode:difference">
+          ${serviceShort}</span>
+      </div>
+      <span style="text-align:right;font-size:11px;font-weight:600;color:var(--yellow);white-space:nowrap">
+        ${fmtMoney(s._mo, s.currency)}
+        <span style="color:var(--text-mute);font-size:9px;font-weight:400;margin-left:4px">(${share.toFixed(0)}%)</span>
+      </span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = bars;
+}
+
+async function renderStats() {
+  // Try to get snapshot timestamp from summary endpoint
+  try {
+    const r = await fetch(`${API}/api/summary`);
+    if (r.ok) {
+      const d = await r.json();
+      const snap = document.getElementById('snapshot-label');
+      if (snap && d.data_as_of) {
+        snap.textContent = d.data_as_of.replace('T', ' ').substring(0, 19) + 'Z';
+      }
+    }
+  } catch(e) { /* ignore */ }
+
+  const active = allSubs.filter(x => x.status === 'active').length;
+  const flagged = allSubs.filter(x => x.status === 'idle').length;
+
+  // Actual total: sum of all wallet payments (total_czk per sub)
+  const actualTotal = Object.values(spendMap).reduce((s, v) => s + (v.total_czk || 0), 0);
+  // Month span from earliest sub start_date to now
+  const dates = allSubs.map(s => s.start_date).filter(Boolean).sort();
+  let walletMonths = 1;
+  if (dates.length) {
+    const [ey, em] = dates[0].split('-').map(Number);
+    const now = new Date();
+    walletMonths = Math.max(1, (now.getFullYear() - ey) * 12 + now.getMonth() + 1 - em + 1);
+  }
+  const moAvg = actualTotal > 0 ? Math.round(actualTotal / walletMonths) : 0;
+
+  document.getElementById('mtd-total').textContent = Math.round(actualTotal) + ' CZK';
+  document.getElementById('mtd-yearly').textContent = 'removed';
+  document.getElementById('burn-total').textContent = Math.round(actualTotal).toLocaleString() + ' CZK';
+  document.getElementById('burn-yr').textContent = moAvg.toLocaleString() + ' CZK / MO AVG';
+  document.getElementById('meta-counts').textContent = `${active} ACTIVE / ${flagged} FLAGGED`;
+
+  renderBurnRate();
+}
+
+function sortBy(key){sortDir=sortKey===key?(sortDir==='desc'?'asc':'desc'):'desc';sortKey=key;renderTable();}
+function setFilter(f,btn){activeFilter=f;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTable();}
+
+async function triggerSync() {
+  const btn=document.getElementById('btn-sync');
+  btn.disabled=true;btn.textContent='↻ SYNCING…';
+  document.getElementById('status-dot').textContent='◌ SYNCING';
+  document.getElementById('status-dot').style.color='var(--yellow)';
+  try{await fetch(`${API}/api/sync-wallet?since_days=180`,{method:'POST'});await loadAll();}
+  catch(e){document.getElementById('status-dot').textContent='✗ SYNC ERR';document.getElementById('status-dot').style.color='var(--orange)';}
+  btn.disabled=false;btn.textContent='↻ SYNC';
+}
+
+function exportCSV() {
+  const rows=[['ID','SERVICE','CATEGORY','COST/MO','CURRENCY','BILLING','STATUS','SINCE','SOURCE']];
+  allSubs.forEach(s=>rows.push([s.id,s.service_name,s.category,monthly(s).toFixed(2),s.currency,s.billing_cycle,s.status,s.start_date||'',s.source]));
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(rows.map(r=>r.join(',')).join('\n'));a.download='subs-'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='F5'){e.preventDefault();loadAll();}
+  if(e.key==='F8'){e.preventDefault();exportCSV();}
+  if(e.key==='F2'){document.getElementById('search-input')?.focus();}
+});
+
+function updateSyncAgo(){
+  if(!lastSync)return;
+  const diff=Math.floor((Date.now()-lastSync)/1000);const m=Math.floor(diff/60),s=diff%60;
+  document.getElementById('sync-ago').textContent=`SYNC ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} AGO`;
+}
+setInterval(updateSyncAgo,5000);
+
+function renderMonthlyTrend(data) {
+  const el = document.getElementById('monthly-trend');
+  if (!el) return;
+  const months = data.months || [];
+  const byCategory = data.by_category || {};
+  const topCats = (data.top_categories || []).slice(0, 6);
+  if (!months.length || !topCats.length) { el.style.display='none'; return; }
+  el.style.display='block';
+
+  const colW = Math.floor(100 / months.length);
+  const monthLabels = months.map(m =>
+    `<span style="flex:1;text-align:center;font-size:9px;color:var(--text-mute)">${m.substring(5)}</span>`
+  ).join('');
+
+  const rows = topCats.map(cat => {
+    const color = CAT_COLOR[cat] || '#8a8a8e';
+    const vals = months.map(m => (byCategory[cat]||{})[m] || 0);
+    const max = Math.max(...vals, 1);
+    const bars = vals.map((v, i) => {
+      const pct = Math.round((v / max) * 32);
+      return `<span style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px" title="${months[i]}: ${Math.round(v)} CZK">
+        <span style="font-size:8px;color:${v>0?color:'var(--text-mute)'}">${v>0?Math.round(v):''}</span>
+        <span style="width:10px;height:${Math.max(2,pct)}px;background:${color};opacity:.7;border-radius:1px;display:block"></span>
+      </span>`;
+    }).join('');
+    return `<div style="display:flex;align-items:flex-end;gap:4px;padding:3px 0;border-bottom:1px solid var(--hairline)">
+      <span style="width:90px;font-size:9px;color:${color};flex-shrink:0">${cat.replace('_',' ').toUpperCase()}</span>
+      <span style="flex:1;display:flex;align-items:flex-end">${bars}</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="pane-rule"><span class="t">▸ SPEND TREND · 3M BY CATEGORY</span></div>
+    <div style="padding:6px 10px 2px;display:flex;gap:4px;padding-left:100px">${monthLabels}</div>
+    <div style="padding:4px 10px 8px">${rows}</div>`;
+}
+
+function renderSyncStatus(data) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const syncs = data.syncs || [];
+  if (!syncs.length) { el.style.display='none'; return; }
+  el.style.display='block';
+  const rows = syncs.slice(0, 6).map(s => {
+    const ts = s.last_sync_at ? s.last_sync_at.substring(0,16).replace('T',' ') : '—';
+    const stColor = s.status==='success' ? 'var(--green)' : s.status==='running' ? 'var(--yellow)' : 'var(--orange)';
+    return `<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:6px;padding:3px 0;border-bottom:1px solid var(--hairline);font-size:10px;align-items:center">
+      <span style="color:var(--text-dim)">${s.source.toUpperCase()}</span>
+      <span style="color:${stColor}">${s.status.toUpperCase()}</span>
+      <span style="color:var(--text-mute)">${s.emails_processed||0} emails · ${(s.duration_seconds||0).toFixed(1)}s · ${ts}</span>
+    </div>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="pane-rule"><span class="t">▸ SYNC HISTORY</span></div>
+    <div style="padding:4px 10px 8px">${rows}</div>`;
+}
+
+async function loadAll() {
+  document.getElementById('bot-ready').textContent='LOADING_';
+  document.getElementById('status-dot').textContent='◌ FETCHING';
+  document.getElementById('status-dot').style.color='var(--text-dim)';
+  try {
+    const [subsResp, spendResp, trendResp, syncResp] = await Promise.all([
+      fetch(`${API}/api/subscriptions?page_size=500&sort_by=cost&sort_order=desc`),
+      fetch(`${API}/api/wallet-spend-map`).then(r => r.ok ? r.json() : {map: {}}),
+      fetch(`${API}/api/monthly-trend?months=3`).then(r => r.ok ? r.json() : null),
+      fetch(`${API}/api/sync-status`).then(r => r.ok ? r.json() : null),
+    ]);
+    if(!subsResp.ok) throw new Error(`HTTP ${subsResp.status}`);
+    const subsData=await subsResp.json();
+    allSubs=subsData.items||[];
+    spendMap = (spendResp && spendResp.map) || {};
+    // Update data timespan badge
+    (function(){
+      const dates = allSubs.map(s=>s.start_date).filter(Boolean).sort();
+      if (!dates.length) return;
+      const earliest = dates[0].substring(0,7);  // YYYY-MM
+      const now = new Date();
+      const latest = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+      const fmt = d => { const [y,m]=d.split('-'); return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][+m-1]+' '+y; };
+      // Count months between earliest and latest
+      const [ey,em] = earliest.split('-').map(Number);
+      const spanMo = (now.getFullYear()-ey)*12 + now.getMonth()+1 - em + 1;
+      document.getElementById('data-span').textContent = `DATA: ${fmt(earliest)} – ${fmt(latest)} · ${spanMo}MO`;
+    })();
+    renderTable();renderTicker(allSubs);renderAllocation(allSubs);renderFlagged(allSubs);renderBurnRate();renderStats();
+    if (trendResp) renderMonthlyTrend(trendResp);
+    if (syncResp) renderSyncStatus(syncResp);
+    lastSync=Date.now();updateSyncAgo();
+    document.getElementById('status-dot').textContent='● LIVE';
+    document.getElementById('status-dot').style.color='var(--green)';
+    document.getElementById('bot-ready').textContent='READY_';
+  } catch(err) {
+    console.error(err);
+    document.getElementById('reg-tbody').innerHTML=`<tr class="state-row"><td colspan="10">⚠ API ERROR — ${err.message}</td></tr>`;
+    document.getElementById('status-dot').textContent='✗ OFFLINE';
+    document.getElementById('status-dot').style.color='var(--orange)';
+    document.getElementById('bot-ready').textContent='ERR_';
+  }
+}
+loadAll();
+</script>
+</body>
+</html>
