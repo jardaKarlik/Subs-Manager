@@ -1172,55 +1172,127 @@
       const el = document.getElementById('monthly-trend-container');
       if (!el) return;
 
-      const months = data.months || [];
+      const rawMonths = (data.months || []).slice().sort();
       const byCategory = data.by_category || {};
       const topCats = (data.top_categories || []).slice(0, 6);
 
-      if (!months.length || !topCats.length) {
+      if (!rawMonths.length || !topCats.length) {
         el.innerHTML = `<div class="glass-panel p-6 rounded-2xl h-80 flex items-center justify-center text-on-surface-variant opacity-60 font-mono text-xs">NO SPEND TREND DATA</div>`;
         return;
       }
 
-      const width = 700;
-      const height = 280;
+      // Use the last 3 actual months as history
+      const historyMonths = rawMonths.slice(-3);
+
+      // Generate 3 future months from the last history month
+      function addMonths(ym, n) {
+        const [y, m] = ym.split('-').map(Number);
+        const d = new Date(y, m - 1 + n, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }
+      const lastHistoryMonth = historyMonths[historyMonths.length - 1];
+      const forecastMonths = [1, 2, 3].map(n => addMonths(lastHistoryMonth, n));
+
+      // Build forecast values per category using linear regression on all raw months
+      const forecastData = {};
+      topCats.forEach(cat => {
+        const catData = byCategory[cat] || {};
+        // Use all raw months for regression
+        const vals = rawMonths.map(m => catData[m] || 0);
+        // Simple linear regression: y = a + b*x
+        const n = vals.length;
+        if (n < 2) {
+          // Not enough data, use average
+          const avg = vals.reduce((s, v) => s + v, 0) / Math.max(n, 1);
+          forecastData[cat] = forecastMonths.map(() => Math.max(0, avg));
+          return;
+        }
+        const xMean = (n - 1) / 2;
+        const yMean = vals.reduce((s, v) => s + v, 0) / n;
+        let num = 0, den = 0;
+        vals.forEach((v, i) => {
+          num += (i - xMean) * (v - yMean);
+          den += (i - xMean) * (i - xMean);
+        });
+        const slope = den !== 0 ? num / den : 0;
+        const intercept = yMean - slope * xMean;
+        forecastData[cat] = forecastMonths.map((_, fi) => {
+          const predicted = intercept + slope * (n + fi);
+          return Math.max(0, predicted);
+        });
+      });
+
+      // Combined months array: 3 history + 3 forecast
+      const allMonths = [...historyMonths, ...forecastMonths];
+      const historyCount = historyMonths.length;
+
+      const width = 780;
+      const height = 300;
       const paddingLeft = 70;
-      const paddingRight = 20;
-      const paddingTop = 20;
-      const paddingBottom = 40;
+      const paddingRight = 30;
+      const paddingTop = 25;
+      const paddingBottom = 45;
+      const chartW = width - paddingLeft - paddingRight;
+      const chartH = height - paddingTop - paddingBottom;
 
-      const step = months.length > 1 ? (width - paddingLeft - paddingRight) / (months.length - 1) : 0;
+      const step = allMonths.length > 1 ? chartW / (allMonths.length - 1) : 0;
 
+      // Compute max value across history and forecast
       let maxVal = 0;
       topCats.forEach(cat => {
-        months.forEach(m => {
+        historyMonths.forEach(m => {
           const val = (byCategory[cat] || {})[m] || 0;
           if (val > maxVal) maxVal = val;
         });
+        (forecastData[cat] || []).forEach(v => { if (v > maxVal) maxVal = v; });
       });
       if (maxVal === 0) maxVal = 1;
-      maxVal = maxVal * 1.1;
+      maxVal = maxVal * 1.15;
 
-      // Draw gridlines and labels
+      function yPos(val) {
+        return height - paddingBottom - (val / maxVal) * chartH;
+      }
+
+      // Gridlines
       const gridCount = 4;
       let gridLines = '';
       for (let i = 0; i <= gridCount; i++) {
         const yVal = (maxVal / gridCount) * i;
-        const yPos = height - paddingBottom - (yVal / maxVal) * (height - paddingTop - paddingBottom);
+        const y = yPos(yVal);
         gridLines += `
-          <line x1="${paddingLeft}" y1="${yPos}" x2="${width - paddingRight}" y2="${yPos}" stroke="rgba(255,255,255,0.05)" stroke-dasharray="4" />
-          <text x="${paddingLeft - 10}" y="${yPos + 3}" fill="rgba(255,255,255,0.4)" font-size="9" text-anchor="end" font-family="monospace">${Math.round(yVal).toLocaleString()}</text>
+          <line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-dasharray="4" />
+          <text x="${paddingLeft - 10}" y="${y + 3}" fill="rgba(255,255,255,0.4)" font-size="9" text-anchor="end" font-family="monospace">${Math.round(yVal).toLocaleString()}</text>
         `;
       }
 
+      // X-axis labels
       let xAxisLabels = '';
-      months.forEach((m, idx) => {
+      allMonths.forEach((m, idx) => {
         const x = paddingLeft + idx * step;
+        const isForecast = idx >= historyCount;
+        const opacity = isForecast ? '0.35' : '0.55';
+        const suffix = isForecast ? ' ⟶' : '';
         xAxisLabels += `
-          <text x="${x}" y="${height - paddingBottom + 18}" fill="rgba(255,255,255,0.5)" font-size="9" text-anchor="middle" font-family="monospace">${m}</text>
-          <line x1="${x}" y1="${height - paddingBottom}" x2="${x}" y2="${height - paddingBottom + 4}" stroke="rgba(255,255,255,0.15)" />
+          <text x="${x}" y="${height - paddingBottom + 20}" fill="rgba(255,255,255,${opacity})" font-size="9" text-anchor="middle" font-family="monospace" font-style="${isForecast ? 'italic' : 'normal'}">${m}${suffix}</text>
+          <line x1="${x}" y1="${height - paddingBottom}" x2="${x}" y2="${height - paddingBottom + 4}" stroke="rgba(255,255,255,0.12)" />
         `;
       });
 
+      // "NOW" vertical divider between history and forecast
+      const nowX = paddingLeft + (historyCount - 1) * step;
+      const nowDivider = `
+        <line x1="${nowX}" y1="${paddingTop}" x2="${nowX}" y2="${height - paddingBottom}" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" stroke-dasharray="6,4" />
+        <text x="${nowX}" y="${paddingTop - 6}" fill="rgba(255,255,255,0.5)" font-size="8" text-anchor="middle" font-family="monospace" font-weight="bold">▼ NOW</text>
+      `;
+
+      // Forecast shaded zone
+      const forecastZoneX = nowX;
+      const forecastZoneW = chartW - (nowX - paddingLeft);
+      const forecastZone = `
+        <rect x="${forecastZoneX}" y="${paddingTop}" width="${forecastZoneW}" height="${chartH}" fill="url(#forecast-gradient)" />
+      `;
+
+      // Bezier helper
       function getBezierPath(points) {
         if (points.length === 0) return '';
         if (points.length === 1) return `M ${points[0].x} ${points[0].y} L ${points[0].x} ${points[0].y}`;
@@ -1237,27 +1309,78 @@
         return d;
       }
 
+      // Measure path length for animation
+      let animId = 0;
       let svgPaths = '';
-      topCats.forEach(cat => {
+      let svgDefs = `
+        <defs>
+          <linearGradient id="forecast-gradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="rgba(186,126,244,0)" />
+            <stop offset="100%" stop-color="rgba(186,126,244,0.06)" />
+          </linearGradient>
+        </defs>
+      `;
+
+      topCats.forEach((cat, catIdx) => {
         const color = CAT_COLOR[cat] || '#8a8a8e';
-        const points = months.map((m, idx) => {
-          const val = (byCategory[cat] || {})[m] || 0;
+        const catData = byCategory[cat] || {};
+        const forecasts = forecastData[cat] || [];
+
+        // History points
+        const histPoints = historyMonths.map((m, idx) => {
+          const val = catData[m] || 0;
           const x = paddingLeft + idx * step;
-          const y = height - paddingBottom - (val / maxVal) * (height - paddingTop - paddingBottom);
-          return { x, y };
+          return { x, y: yPos(val), val };
         });
-        const linePath = getBezierPath(points);
-        const areaPath = linePath + ` L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`;
-        
-        svgPaths += `
-          <path d="${areaPath}" fill="${color}" fill-opacity="0.15" />
-          <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" />
-          ${points.map((p, idx) => {
-            const val = (byCategory[cat] || {})[months[idx]] || 0;
-            if (val === 0) return '';
-            return `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${color}" stroke="#161219" stroke-width="1.5" title="${cat}: ${Math.round(val)} CZK" />`;
-          }).join('')}
-        `;
+
+        // Forecast points (continue from last history point)
+        const fcPoints = forecastMonths.map((m, idx) => {
+          const val = forecasts[idx] || 0;
+          const x = paddingLeft + (historyCount + idx) * step;
+          return { x, y: yPos(val), val };
+        });
+
+        // Full points array for connected line
+        const allPoints = [...histPoints, ...fcPoints];
+
+        // History path + area (solid)
+        if (histPoints.length > 1) {
+          const histPath = getBezierPath(histPoints);
+          const histArea = histPath + ` L ${histPoints[histPoints.length - 1].x} ${height - paddingBottom} L ${histPoints[0].x} ${height - paddingBottom} Z`;
+          const id = 'hist-line-' + (animId++);
+          svgPaths += `
+            <path d="${histArea}" fill="${color}" fill-opacity="0.12" class="chart-area-anim" style="animation-delay: ${catIdx * 0.12}s" />
+            <path id="${id}" d="${histPath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" class="chart-line-anim" style="animation-delay: ${catIdx * 0.12}s" />
+          `;
+        }
+
+        // Forecast path + area (dashed, lower opacity)
+        if (fcPoints.length > 0) {
+          const bridgePoints = [histPoints[histPoints.length - 1], ...fcPoints];
+          const fcPath = getBezierPath(bridgePoints);
+          const fcArea = fcPath + ` L ${fcPoints[fcPoints.length - 1].x} ${height - paddingBottom} L ${histPoints[histPoints.length - 1].x} ${height - paddingBottom} Z`;
+          const id = 'fc-line-' + (animId++);
+          svgPaths += `
+            <path d="${fcArea}" fill="${color}" fill-opacity="0.06" class="chart-area-anim" style="animation-delay: ${catIdx * 0.12 + 0.5}s" />
+            <path id="${id}" d="${fcPath}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-dasharray="8,5" opacity="0.65" class="chart-line-anim" style="animation-delay: ${catIdx * 0.12 + 0.5}s" />
+          `;
+        }
+
+        // History dots (solid)
+        histPoints.forEach((p, idx) => {
+          if (p.val === 0) return;
+          svgPaths += `<circle cx="${p.x}" cy="${p.y}" r="4.5" fill="${color}" stroke="#161219" stroke-width="2" class="chart-dot-anim" style="animation-delay: ${catIdx * 0.12 + idx * 0.08 + 0.3}s">
+            <title>${cat.replace('_',' ')}: ${Math.round(p.val).toLocaleString()} CZK (${historyMonths[idx]})</title>
+          </circle>`;
+        });
+
+        // Forecast dots (hollow ring)
+        fcPoints.forEach((p, idx) => {
+          if (p.val === 0) return;
+          svgPaths += `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#161219" stroke="${color}" stroke-width="2" stroke-dasharray="3,2" opacity="0.7" class="chart-dot-anim" style="animation-delay: ${catIdx * 0.12 + (historyCount + idx) * 0.08 + 0.5}s">
+            <title>${cat.replace('_',' ')} (forecast): ~${Math.round(p.val).toLocaleString()} CZK (${forecastMonths[idx]})</title>
+          </circle>`;
+        });
       });
 
       const legend = topCats.map(cat => {
@@ -1275,15 +1398,56 @@
           <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-3 gap-2">
             <div>
               <h4 class="font-bold text-sm text-on-surface tracking-widest uppercase">Monthly Category Trend</h4>
-              <p class="text-[10px] text-on-surface-variant opacity-60">Distribution of subscription spend over time</p>
+              <p class="text-[10px] text-on-surface-variant opacity-60">3 months history + 3 months forecast</p>
             </div>
-            <div class="flex flex-wrap gap-x-4 gap-y-1.5">${legend}</div>
+            <div class="flex flex-wrap gap-x-4 gap-y-1.5">
+              ${legend}
+              <div class="flex items-center gap-1.5 text-[10px] font-semibold text-on-surface-variant uppercase tracking-wider opacity-50">
+                <span class="w-5 h-0 border-t-2 border-dashed border-on-surface-variant/40"></span>
+                <span>Forecast</span>
+              </div>
+            </div>
           </div>
           
+          <style>
+            @keyframes chartLineIn {
+              0% { stroke-dashoffset: 2000; opacity: 0; }
+              10% { opacity: 1; }
+              100% { stroke-dashoffset: 0; opacity: 1; }
+            }
+            @keyframes chartAreaIn {
+              0% { opacity: 0; transform: scaleY(0); transform-origin: bottom; }
+              100% { opacity: 1; transform: scaleY(1); }
+            }
+            @keyframes chartDotIn {
+              0% { opacity: 0; r: 0; }
+              60% { opacity: 1; r: 6; }
+              100% { opacity: 1; r: 4.5; }
+            }
+            .chart-line-anim {
+              stroke-dasharray: 2000;
+              stroke-dashoffset: 2000;
+              animation: chartLineIn 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            }
+            .chart-area-anim {
+              opacity: 0;
+              animation: chartAreaIn 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            }
+            .chart-dot-anim {
+              opacity: 0;
+              animation: chartDotIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            }
+          </style>
+
           <div class="w-full overflow-x-auto">
-            <svg viewBox="0 0 ${width} ${height}" class="w-full min-w-[600px] h-auto block overflow-visible">
+            <svg viewBox="0 0 ${width} ${height}" class="w-full min-w-[650px] h-auto block overflow-visible">
+              ${svgDefs}
+              <!-- Forecast zone -->
+              ${forecastZone}
               <!-- Gridlines -->
               ${gridLines}
+              <!-- NOW divider -->
+              ${nowDivider}
               <!-- Paths -->
               ${svgPaths}
               <!-- Axes -->
@@ -1475,7 +1639,7 @@
           fetch(`${API}/api/subscriptions?page_size=100&approval_status=pending`),
           fetch(`${API}/api/wallet-spend-map`).then(r => r.ok ? r.json() : {map: {}}),
           fetch(`${API}/api/events?limit=250`).then(r => r.ok ? r.json() : {events: []}),
-          fetch(`${API}/api/monthly-trend?months=3`).then(r => r.ok ? r.json() : null),
+          fetch(`${API}/api/monthly-trend?months=6`).then(r => r.ok ? r.json() : null),
           fetch(`${API}/api/sync-status`).then(r => r.ok ? r.json() : null)
         ]);
 
