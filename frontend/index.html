@@ -838,7 +838,7 @@ async function triggerSync() {
   btn.disabled=true;btn.textContent='↻ SYNCING…';
   document.getElementById('status-dot').textContent='◌ SYNCING';
   document.getElementById('status-dot').style.color='var(--yellow)';
-  try{await fetch(`${API}/api/sync-emails`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_results:200,since_days:7})});await loadAll();}
+  try{await fetch(`${API}/api/sync-wallet?since_days=180`,{method:'POST'});await loadAll();}
   catch(e){document.getElementById('status-dot').textContent='✗ SYNC ERR';document.getElementById('status-dot').style.color='var(--orange)';}
   btn.disabled=false;btn.textContent='↻ SYNC';
 }

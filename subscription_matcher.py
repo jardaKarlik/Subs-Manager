@@ -157,6 +157,37 @@ def _is_unmatchable_payee(payee: str) -> bool:
     return bool(_UNMATCHABLE_RE.match((payee or '').strip()))
 
 
+def get_effective_payee(record: FinancialRecord) -> str:
+    """Resolve payee from counterParty, fallback to note parsing."""
+    payee = (record.payee or '').strip()
+    note = (record.note or '').strip()
+
+    # 1. If payee is valid and not empty/unmatchable, use it
+    if payee and not _is_unmatchable_payee(payee):
+        return payee
+
+    # 2. Try parsing note
+    if note:
+        # Check for pattern: "REF | MERCHANT NAME"
+        if '|' in note:
+            parts = note.split('|')
+            candidate = parts[-1].strip()
+            if candidate and not _is_unmatchable_payee(candidate):
+                return candidate
+        # Check for pattern: "AMOUNT CURRENCY;MERCHANT;CITY;COUNTRY"
+        elif ';' in note:
+            parts = note.split(';')
+            if len(parts) >= 2:
+                candidate = parts[1].strip()
+                if candidate and not _is_unmatchable_payee(candidate):
+                    return candidate
+        # Fallback to note if it's not unmatchable
+        if not _is_unmatchable_payee(note):
+            return note
+
+    return payee
+
+
 def _normalize_payee(payee: str) -> str:
     """Strip legal suffixes and punctuation for fuzzy matching."""
     s = payee.lower()
@@ -239,7 +270,8 @@ class SubscriptionMatcher:
                     filtered += 1
                     continue
 
-                sub = _match_payee_to_subscription(rec.payee or '', subs)
+                payee_name = get_effective_payee(rec)
+                sub = _match_payee_to_subscription(payee_name, subs)
                 if sub:
                     rec.matched_subscription_id = sub.id
                     matched += 1
@@ -297,6 +329,34 @@ class SubscriptionMatcher:
                         f"WHERE id = {int(sub.id)}"
                     )
                 )
+
+            # Mirror matched financial records to subscription_events table
+            existing_event_ids_res = await db.execute(
+                select(SubscriptionEvent.message_id)
+                .where(SubscriptionEvent.source_type == 'wallet')
+            )
+            existing_event_ids = set(r[0] for r in existing_event_ids_res.all() if r[0])
+
+            subs_by_id = {s.id: s for s in subs}
+            for rec in all_matched:
+                if rec.id in existing_event_ids:
+                    continue
+                sub = subs_by_id.get(rec.matched_subscription_id)
+                if not sub:
+                    continue
+                event = SubscriptionEvent(
+                    subscription_id=sub.id,
+                    service_name=sub.service_name,
+                    category=sub.category,
+                    amount=abs(rec.amount),
+                    currency=rec.currency,
+                    billing_cycle=sub.billing_cycle,
+                    event_date=rec.date,
+                    source_type='wallet',
+                    message_id=rec.id,
+                    created_at=datetime.utcnow()
+                )
+                db.add(event)
 
             await db.commit()
 
@@ -503,7 +563,8 @@ class SubscriptionMatcher:
 
         by_payee: dict = {}
         for rec in records:
-            key = _normalize_payee(rec.payee or 'unknown')
+            eff_payee = get_effective_payee(rec)
+            key = _normalize_payee(eff_payee or 'unknown')
             by_payee.setdefault(key, []).append(rec)
 
         candidates = []
@@ -513,8 +574,9 @@ class SubscriptionMatcher:
             amounts    = [round(abs(r.amount), 2) for r in recs]
             avg_amount = round(sum(amounts) / len(amounts), 2)
             score      = min(100, len(recs) * 20 + (50 if avg_amount > 0 else 0))
+            eff_payee  = get_effective_payee(recs[0])
             candidates.append({
-                'payee':       recs[0].payee,
+                'payee':       eff_payee or recs[0].payee,
                 'payee_norm':  payee_norm,
                 'occurrences': len(recs),
                 'avg_amount':  avg_amount,
@@ -539,7 +601,7 @@ class SubscriptionMatcher:
             records = [
                 r for r in rec_result.scalars().all()
                 if not _is_paypal_record(r)
-                and _normalize_payee(r.payee or '') == _normalize_payee(payee)
+                and _normalize_payee(get_effective_payee(r)) == _normalize_payee(payee)
             ]
 
             if not records:
@@ -688,3 +750,121 @@ class SubscriptionMatcher:
                     inserted += 1
             await db.commit()
         return inserted
+
+    async def auto_discover_new_subscriptions(self) -> dict:
+        """
+        Scan unmatched expenses in subscription-relevant categories.
+        If any payee appears >= 2 times, auto-create it as a confirmed/approved subscription.
+        Returns a dict with discovery stats.
+        """
+        discovered_count = 0
+        async with AsyncSessionLocal() as db:
+            # 1. Find unmatched recurring candidates
+            candidates = await self.find_unmatched_recurring(min_occurrences=2)
+            if not candidates:
+                return {"discovered": 0}
+
+            # Get list of existing subscriptions to avoid duplicates
+            sub_result = await db.execute(select(Subscription))
+            existing_subs = sub_result.scalars().all()
+            existing_names = {s.service_name.lower() for s in existing_subs}
+
+            # For each candidate:
+            for cand in candidates:
+                raw_payee = cand["payee"]
+                payee_norm = cand["payee_norm"]
+                
+                # Check alias or normalize name for subscription name
+                # E.g. "Spotify AB" -> "Spotify"
+                service_name = raw_payee
+                for alias, svc_name in PAYEE_ALIASES.items():
+                    if alias in raw_payee.lower():
+                        service_name = svc_name
+                        break
+                else:
+                    # Title case normalized payee
+                    service_name = payee_norm.title()
+                
+                if service_name.lower() in existing_names:
+                    # Skip if already exists
+                    continue
+
+                # Run promotion logic (similar to promote_candidate but auto)
+                # First let's query all unmatched records for this payee to match them to the new sub
+                rec_result = await db.execute(
+                    select(FinancialRecord).where(
+                        FinancialRecord.record_type == 'expense',
+                        FinancialRecord.matched_subscription_id == None,
+                    )
+                )
+                records = [
+                    r for r in rec_result.scalars().all()
+                    if not _is_payment_processor_record(r)
+                    and _normalize_payee(get_effective_payee(r)) == payee_norm
+                ]
+                
+                if not records:
+                    continue
+
+                amounts = [round(abs(r.amount), 2) for r in records]
+                flat_fee = Counter(amounts).most_common(1)[0][0]
+                last_pay = max(r.date for r in records if r.date)
+                first_pay = min(r.date for r in records if r.date)
+
+                # Determine category: check if the records have a category_name we can map
+                category = 'other'
+                for r in records:
+                    if r.category_name:
+                        w_cat = r.category_name.lower()
+                        if 'software' in w_cat or 'apps' in w_cat or 'games' in w_cat:
+                            category = 'dev_tools'
+                        elif 'tv' in w_cat or 'streaming' in w_cat:
+                            category = 'streaming'
+                        elif 'music' in w_cat:
+                            category = 'music'
+                        elif 'books' in w_cat or 'subscription' in w_cat:
+                            category = 'productivity'
+                        break
+
+                # Create subscription
+                new_sub = Subscription(
+                    service_name=service_name,
+                    category=category,
+                    cost=flat_fee,
+                    currency=records[0].currency,
+                    billing_cycle='monthly',
+                    status='active',
+                    source='wallet_discovery',
+                    confirmed_by_wallet=1,
+                    last_payment_date=last_pay,
+                    actual_cost=flat_fee,
+                    approval_status='approved',
+                    start_date=first_pay.strftime('%Y-%m-%d') if hasattr(first_pay, 'strftime') else str(first_pay)[:10],
+                )
+                db.add(new_sub)
+                await db.flush() # get ID
+                
+                # Match records and create events
+                for rec in records:
+                    rec.matched_subscription_id = new_sub.id
+                    event = SubscriptionEvent(
+                        subscription_id=new_sub.id,
+                        service_name=new_sub.service_name,
+                        category=new_sub.category,
+                        amount=abs(rec.amount),
+                        currency=rec.currency,
+                        billing_cycle=new_sub.billing_cycle,
+                        event_date=rec.date,
+                        source_type='wallet',
+                        message_id=rec.id,
+                        created_at=datetime.utcnow()
+                    )
+                    db.add(event)
+
+                # Add to existing names so we don't duplicate in this loop
+                existing_names.add(service_name.lower())
+                discovered_count += 1
+
+            await db.commit()
+            
+        return {"discovered": discovered_count}

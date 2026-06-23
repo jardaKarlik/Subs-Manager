@@ -79,62 +79,28 @@ async def _run_with_notification(job_name: str, coro_factory):
 
 
 async def job_wallet_sync():
-    """Every 3 days: pull last 5 days of wallet records.
-
-    2-day overlap buffer over the 3-day cycle guarantees that no transactions
-    slip through due to timezone shifts or processing delays.
-    """
-
+    """Every 3 days: pull last 5 days of wallet records, run matching, and auto-discover."""
     async def _run():
         from wallet_fetcher import WalletFetcher
-        return await WalletFetcher().sync(since_days=5)
-
-    await _run_with_notification("wallet_sync", _run)
-
-
-async def job_email_sync():
-    """Every 3 days: pull last 5 days of emails from all sources.
-
-    2-day overlap buffer over the 3-day cycle guarantees that no emails
-    slip through due to timezone shifts or processing delays.
-    """
-
-    async def _run():
-        from email_fetcher import EmailFetcher
-        from database import AsyncSessionLocal
-        async with AsyncSessionLocal() as db:
-            return await EmailFetcher().process_emails(db=db, since_days=5, max_results=500)
-
-    await _run_with_notification("email_sync", _run)
-
-
-async def job_wallet_match():
-    """Every 3 days: cross-reference wallet records against subscriptions."""
-
-    async def _run():
         from subscription_matcher import SubscriptionMatcher
+
+        # 1. Fetch wallet records
+        sync_res = await WalletFetcher().sync(since_days=5)
+
+        # 2. Run matching, payment type detection, and auto-discovery
         matcher = SubscriptionMatcher()
-        match_result = await matcher.match_all()
-        cycle_result = await matcher.infer_billing_cycles()
-        return {"matched": match_result, "cycles": cycle_result}
+        match_res = await matcher.match_all()
+        detect_res = await matcher.detect_all_payment_types()
+        discover_res = await matcher.auto_discover_new_subscriptions()
 
-    await _run_with_notification("wallet_match", _run)
-
-
-async def job_discovery_sweep():
-    """Weekly: surface new recurring payees as pending candidates."""
-
-    async def _run():
-        from subscription_matcher import SubscriptionMatcher
-        matcher = SubscriptionMatcher()
-        candidates = await matcher.find_unmatched_recurring(min_occurrences=2)
-        high_confidence = [c for c in candidates if c["score"] >= 70]
         return {
-            "candidates": len(candidates),
-            "high_confidence": len(high_confidence),
+            "sync": sync_res,
+            "matching": match_res,
+            "payment_type_detection": detect_res,
+            "auto_discovery": discover_res
         }
 
-    await _run_with_notification("discovery_sweep", _run)
+    await _run_with_notification("wallet_sync", _run)
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -147,40 +113,13 @@ def start_scheduler():
         logger.warning("Scheduler already running — skipping start")
         return
 
-    # Every 3 days at 19:00 UTC — wallet sync
+    # Every 3 days at 19:00 UTC — wallet sync (full pipeline)
     scheduler.add_job(
         job_wallet_sync,
         CronTrigger(hour=19, minute=0, day="*/3"),
         id="wallet_sync",
         replace_existing=True,
-        misfire_grace_time=3600,  # 1h grace — long ops can take time
-    )
-
-    # Every 3 days at 19:05 UTC — email sync (5 min after wallet)
-    scheduler.add_job(
-        job_email_sync,
-        CronTrigger(hour=19, minute=5, day="*/3"),
-        id="email_sync",
-        replace_existing=True,
-        misfire_grace_time=3600,
-    )
-
-    # Every 3 days at 19:15 UTC — wallet match (10 min after email start)
-    scheduler.add_job(
-        job_wallet_match,
-        CronTrigger(hour=19, minute=15, day="*/3"),
-        id="wallet_match",
-        replace_existing=True,
-        misfire_grace_time=3600,
-    )
-
-    # Weekly discovery sweep — Sunday 07:00 UTC (unchanged)
-    scheduler.add_job(
-        job_discovery_sweep,
-        CronTrigger(day_of_week="sun", hour=7, minute=0),
-        id="discovery_sweep",
-        replace_existing=True,
-        misfire_grace_time=600,
+        misfire_grace_time=3600,  # 1h grace
     )
 
     scheduler.start()

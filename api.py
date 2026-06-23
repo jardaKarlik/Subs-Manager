@@ -510,24 +510,8 @@ async def parse_emails(
     req: ParseEmailsRequest = ParseEmailsRequest(),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Full backfill: Parse emails from all configured sources and detect subscriptions.
-    Default: 1 year back, 50 emails per source.
-    """
-    try:
-        results = await email_fetcher.process_emails(
-            db=db,
-            sources=req.sources,
-            max_results=req.max_results,
-            since_days=req.since_days
-        )
-        return {
-            "success": True,
-            "message": f"Processed {results['processed']} emails, found {results['new_subscriptions']} new subscriptions",
-            "results": results
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email parsing failed: {str(e)}")
+    """Disabled in bank-sync-only branch."""
+    return {"status": "disabled", "message": "Email sync is disabled in this branch."}
 
 
 @app.post("/api/sync-emails")
@@ -535,24 +519,8 @@ async def sync_emails(
     req: SyncEmailsRequest = SyncEmailsRequest(),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Incremental sync: Parse only recent emails (default: last 3 days).
-    Run this on a schedule (e.g., every 3 days) to keep subscriptions up to date.
-    """
-    try:
-        results = await email_fetcher.process_emails(
-            db=db,
-            sources=req.sources,
-            max_results=req.max_results,
-            since_days=req.since_days
-        )
-        return {
-            "success": True,
-            "message": f"Sync complete: {results['processed']} processed, {results['new_subscriptions']} new, {results['skipped']} skipped",
-            "results": results
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email sync failed: {str(e)}")
+    """Disabled in bank-sync-only branch."""
+    return {"status": "disabled", "message": "Email sync is disabled in this branch."}
 
 
 @app.get("/api/sync-emails")
@@ -562,25 +530,8 @@ async def sync_emails_get(
     since_days: int = Query(3, ge=1, le=365),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    GET version: Incremental sync with query params.
-    Use this for simple curl calls without JSON body.
-    """
-    try:
-        source_list = [s.strip() for s in sources.split(",")] if sources else None
-        results = await email_fetcher.process_emails(
-            db=db,
-            sources=source_list,
-            max_results=max_results,
-            since_days=since_days
-        )
-        return {
-            "success": True,
-            "message": f"Sync complete: {results['processed']} processed, {results['new_subscriptions']} new, {results['skipped']} skipped",
-            "results": results
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email sync failed: {str(e)}")
+    """Disabled in bank-sync-only branch."""
+    return {"status": "disabled", "message": "Email sync is disabled in this branch."}
 
 
 @app.get("/api/parse-emails")
@@ -590,25 +541,8 @@ async def parse_emails_get(
     since_days: int = Query(730, ge=1, le=730),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    GET version: Full backfill with query params.
-    Use this for simple curl calls without JSON body.
-    """
-    try:
-        source_list = [s.strip() for s in sources.split(",")] if sources else None
-        results = await email_fetcher.process_emails(
-            db=db,
-            sources=source_list,
-            max_results=max_results,
-            since_days=since_days
-        )
-        return {
-            "success": True,
-            "message": f"Processed {results['processed']} emails, found {results['new_subscriptions']} new subscriptions",
-            "results": results
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email parsing failed: {str(e)}")
+    """Disabled in bank-sync-only branch."""
+    return {"status": "disabled", "message": "Email sync is disabled in this branch."}
 
 
 @app.get("/api/events")
@@ -944,20 +878,52 @@ async def webhook_status(db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/sync-wallet")
 async def sync_wallet(since_days: int = Query(120, ge=1, le=730)):
-    """Fetch financial records from BudgetBakers Wallet and store them."""
+    """Fetch records, match to subs, detect payment types, and auto-discover new subs."""
     from wallet_fetcher import WalletFetcher
+    from subscription_matcher import SubscriptionMatcher
+
+    # 1. Fetch wallet records
     fetcher = WalletFetcher()
-    result = await fetcher.sync(since_days=since_days)
-    return {"status": "ok", **result}
+    sync_result = await fetcher.sync(since_days=since_days)
+
+    # 2. Run matching, payment type detection, and auto-discovery
+    matcher = SubscriptionMatcher()
+    match_result = await matcher.match_all()
+    detect_result = await matcher.detect_all_payment_types()
+    discover_result = await matcher.auto_discover_new_subscriptions()
+
+    return {
+        "status": "ok",
+        "sync": sync_result,
+        "matching": match_result,
+        "payment_type_detection": detect_result,
+        "auto_discovery": discover_result
+    }
 
 
 @app.get("/api/sync-wallet")
 async def sync_wallet_get(since_days: int = Query(120, ge=1, le=730)):
-    """GET version of wallet sync (browser-friendly)."""
+    """GET version of wallet sync pipeline (browser-friendly)."""
     from wallet_fetcher import WalletFetcher
+    from subscription_matcher import SubscriptionMatcher
+
+    # 1. Fetch wallet records
     fetcher = WalletFetcher()
-    result = await fetcher.sync(since_days=since_days)
-    return {"status": "ok", **result}
+    sync_result = await fetcher.sync(since_days=since_days)
+
+    # 2. Run matching, payment type detection, and auto-discovery
+    matcher = SubscriptionMatcher()
+    match_result = await matcher.match_all()
+    detect_result = await matcher.detect_all_payment_types()
+    discover_result = await matcher.auto_discover_new_subscriptions()
+
+    return {
+        "status": "ok",
+        "sync": sync_result,
+        "matching": match_result,
+        "payment_type_detection": detect_result,
+        "auto_discovery": discover_result
+    }
 
 
 @app.get("/api/wallet-records")
