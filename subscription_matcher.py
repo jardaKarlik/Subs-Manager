@@ -154,7 +154,9 @@ _is_paypal_record = _is_payment_processor_record
 
 def _is_unmatchable_payee(payee: str) -> bool:
     """Return True if the payee string should never be matched to a subscription."""
-    return bool(_UNMATCHABLE_RE.match((payee or '').strip()))
+    # Clean bank code first to allow matching digits-only check
+    cleaned = re.sub(r'/\d{3,4}\b', '', (payee or '').strip())
+    return bool(_UNMATCHABLE_RE.match(cleaned))
 
 
 def get_effective_payee(record: FinancialRecord) -> str:
@@ -189,9 +191,18 @@ def get_effective_payee(record: FinancialRecord) -> str:
 
 
 def _normalize_payee(payee: str) -> str:
-    """Strip legal suffixes and punctuation for fuzzy matching."""
-    s = payee.lower()
-    s = re.sub(r'\b[A-Z0-9]{6,}\b', '', s)
+    """Strip legal suffixes, bank codes, account numbers, and punctuation for fuzzy matching."""
+    # 1. Strip uppercase alphanumeric transaction IDs (length 6+) before lowercasing
+    s = re.sub(r'\b[A-Z0-9]{6,}\b', '', payee)
+    s = s.lower()
+
+    # 2. Strip bank codes like /0800 or /5500
+    s = re.sub(r'/\d{3,4}\b', '', s)
+
+    # 3. Strip standalone bank account numbers (any long sequence of digits, length 5+)
+    s = re.sub(r'\b\d{5,}\b', '', s)
+
+    # 4. Normal word split and legal suffix stripping
     words = [w for w in re.split(r'[\s,;|]+', s) if w and w not in STRIP_WORDS]
     return ' '.join(words).strip()
 
@@ -558,7 +569,9 @@ class SubscriptionMatcher:
             )
             records = [
                 r for r in rec_result.scalars().all()
-                if not _is_paypal_record(r) and _is_subscription_record(r)
+                if not _is_paypal_record(r) 
+                and _is_subscription_record(r)
+                and not _is_unmatchable_payee(get_effective_payee(r))
             ]
 
         by_payee: dict = {}
