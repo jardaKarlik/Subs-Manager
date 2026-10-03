@@ -22,7 +22,6 @@ Subs-Manager
 .claude
 .playwright-mcp
 ableton-mcp-extended
-memory
 
 # Local data & logs
 *.log
