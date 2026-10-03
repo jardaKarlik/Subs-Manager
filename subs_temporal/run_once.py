@@ -60,6 +60,24 @@ async def _terminate(wf_id: str) -> None:
     print(f"terminated {wf_id}")
 
 
+async def _schedules() -> None:
+    client = await Client.connect(_addr())
+    async for s in client.list_schedules():
+        paused = s.schedule.state.paused if s.schedule and s.schedule.state else None
+        nxt = [t.isoformat() for t in (s.info.next_action_times or [])][:1] if s.info else []
+        print(f"{s.id}  paused={paused}  next={nxt}")
+
+
+async def _set_paused(sid: str, paused: bool) -> None:
+    client = await Client.connect(_addr())
+    handle = client.get_schedule_handle(sid)
+    if paused:
+        await handle.pause()
+    else:
+        await handle.unpause()
+    print(f"{'paused' if paused else 'unpaused'} {sid}")
+
+
 def main() -> None:
     argv = sys.argv[1:]
     cmd = argv[0] if argv else "help"
@@ -73,6 +91,12 @@ def main() -> None:
         asyncio.run(_status(argv[1]))
     elif cmd == "terminate" and len(argv) > 1:
         asyncio.run(_terminate(argv[1]))
+    elif cmd == "schedules":
+        asyncio.run(_schedules())
+    elif cmd == "pause" and len(argv) > 1:
+        asyncio.run(_set_paused(argv[1], True))
+    elif cmd == "unpause" and len(argv) > 1:
+        asyncio.run(_set_paused(argv[1], False))
     else:
         print(__doc__)
 
