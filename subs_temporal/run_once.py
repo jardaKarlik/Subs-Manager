@@ -62,7 +62,10 @@ async def _terminate(wf_id: str) -> None:
 
 async def _schedules() -> None:
     client = await Client.connect(_addr())
-    async for s in client.list_schedules():
+    it = client.list_schedules()
+    if not hasattr(it, "__aiter__"):
+        it = await it
+    async for s in it:
         paused = s.schedule.state.paused if s.schedule and s.schedule.state else None
         nxt = [t.isoformat() for t in (s.info.next_action_times or [])][:1] if s.info else []
         print(f"{s.id}  paused={paused}  next={nxt}")
