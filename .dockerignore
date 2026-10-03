@@ -1,0 +1,32 @@
+.git
+.gitignore
+.dockerignore
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+*.egg-info
+.venv
+**/.venv
+venv
+
+# Node / frontends
+node_modules
+**/node_modules
+frontend_glass_dist
+
+# Nested clone / tooling / local scratch
+Subs-Manager
+.codex
+.claude
+.playwright-mcp
+ableton-mcp-extended
+memory
+
+# Local data & logs
+*.log
+*.db
+*.sqlite
+*.sqlite3
+rawdata/
