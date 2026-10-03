@@ -137,8 +137,15 @@ class StatsResponse(BaseModel):
 @app.on_event("startup")
 async def startup():
     await init_db()
-    from scheduler import start_scheduler
-    start_scheduler()
+    import os
+    import logging
+    if os.getenv("SCHEDULER_ENABLED", "true").lower() in ("1", "true", "yes", "on"):
+        from scheduler import start_scheduler
+        start_scheduler()
+    else:
+        logging.getLogger("startup").info(
+            "APScheduler disabled (SCHEDULER_ENABLED=false); Temporal schedules own the pipeline"
+        )
     # Seed provider_aliases from hardcoded dict (skips existing rows)
     try:
         from subscription_matcher import SubscriptionMatcher

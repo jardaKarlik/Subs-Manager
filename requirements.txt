@@ -3,6 +3,7 @@ uvicorn
 pydantic
 python-dotenv
 sqlalchemy
+greenlet>=3.1
 alembic
 aiosqlite
 asyncpg
