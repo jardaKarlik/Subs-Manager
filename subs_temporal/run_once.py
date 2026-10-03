@@ -84,7 +84,7 @@ async def _set_paused(sid: str, paused: bool) -> None:
 async def _check() -> None:
     client = await Client.connect(_addr())
     for sid in ("subs-sync", "subs-discovery-sweep", "music-release-scan-daily"):
-        d = client.get_schedule_handle(sid).describe()
+        d = await client.get_schedule_handle(sid).describe()
         st = d.schedule.state
         nxt = [t.isoformat() for t in (d.info.next_action_times or [])] if d.info else []
         print(sid, "paused=", st.paused, "next=", nxt)
