@@ -81,6 +81,15 @@ async def _set_paused(sid: str, paused: bool) -> None:
     print(f"{'paused' if paused else 'unpaused'} {sid}")
 
 
+async def _check() -> None:
+    client = await Client.connect(_addr())
+    for sid in ("subs-sync", "subs-discovery-sweep", "music-release-scan-daily"):
+        d = client.get_schedule_handle(sid).describe()
+        st = d.schedule.state
+        nxt = [t.isoformat() for t in (d.info.next_action_times or [])] if d.info else []
+        print(sid, "paused=", st.paused, "next=", nxt)
+
+
 def main() -> None:
     argv = sys.argv[1:]
     cmd = argv[0] if argv else "help"
@@ -100,6 +109,8 @@ def main() -> None:
         asyncio.run(_set_paused(argv[1], True))
     elif cmd == "unpause" and len(argv) > 1:
         asyncio.run(_set_paused(argv[1], False))
+    elif cmd == "check":
+        asyncio.run(_check())
     else:
         print(__doc__)
 
