@@ -73,15 +73,23 @@ def main() -> None:
             dc.execute(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
             dc.copy_expert(f'COPY "{table}" ({collist}) FROM STDIN WITH CSV', buf)
 
-            dc.execute("SELECT pg_get_serial_sequence(%s, 'id')",
-                       (f'public."{table}"',))
-            seq = dc.fetchone()[0]
-            if seq:
-                dc.execute(
-                    f"SELECT setval(%s, COALESCE((SELECT MAX(id) FROM \"{table}\"), 1), "
-                    f"(SELECT COUNT(*) > 0 FROM \"{table}\"))",
-                    (seq,),
-                )
+            # Only tables with an `id` column have a sequence to reset, and
+            # only if that column is actually serial-backed (pg_get_serial_sequence
+            # returns NULL otherwise). Anything else is silently skipped.
+            if "id" in common:
+                try:
+                    dc.execute("SELECT pg_get_serial_sequence(%s, 'id')",
+                               (f'public."{table}"',))
+                    seq = dc.fetchone()[0]
+                    if seq:
+                        dc.execute(
+                            f"SELECT setval(%s, COALESCE((SELECT MAX(id) FROM \"{table}\"), 1), "
+                            f"(SELECT COUNT(*) > 0 FROM \"{table}\"))",
+                            (seq,),
+                        )
+                except Exception:
+                    # autocommit: a failed statement does not poison the session
+                    pass
 
             sc.execute(f'SELECT COUNT(*) FROM "{table}"')
             n_src = sc.fetchone()[0]
