@@ -1,0 +1,34 @@
+{
+  "name": "default-project",
+  "version": "1.0.1",
+  "description": "",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node dist/worker.js",
+    "dev": "tsc --watch & nodemon dist/worker.js",
+    "client": "node dist/client.js",
+    "build": "node ./node_modules/typescript/bin/tsc",
+    "verify": "node dist/client.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@railway/cli": "^5.63.1",
+    "@temporalio/client": "^1.24.0",
+    "@temporalio/worker": "^1.24.0",
+    "dotenv": "^18.0.3",
+    "pg": "^8.23.1",
+    "typescript": "^7.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
+    "nodemon": "^3.1.14"
+  }
+}
