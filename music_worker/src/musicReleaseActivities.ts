@@ -18,6 +18,7 @@ export interface PersistResult {
   candidates: number;
   inserted: number;
   skipped: number;
+  dbError?: string | undefined;
 }
 
 const MERCH = /\b(poster|sweatshirt|hoodie|t-?shirt|stickers?|tote|mug)\b/i;
@@ -189,6 +190,15 @@ export const persistMusicReleasesActivity = async (releases: MusicRelease[]): Pr
       );
       if (result.rowCount && result.rowCount > 0) inserted += 1;
     }
+  } catch (err) {
+    // The external ReleaseS Postgres (public proxy tokaido.proxy.rlwy.net:18901) has been
+    // unreachable (ECONNRESET) since ~27 Oct because its backend was removed. Persistence is
+    // best-effort: do not fail the whole scan, surface the outage so the fetch still completes.
+    const code = (err as { code?: string }).code;
+    const detail = err instanceof Error ? err.message : String(err);
+    const message = code ? `${code}: ${detail}` : detail;
+    console.error(`[persistMusicReleasesActivity] ReleaseS DB unavailable, persistence skipped: ${message}`);
+    return { candidates: releases.length, inserted: 0, skipped: releases.length, dbError: message };
   } finally {
     await pool.end();
   }
@@ -200,20 +210,25 @@ export const notifyMusicScanActivity = async (summary: {
   soundcloud: number;
   inserted: number;
   skipped: number;
+  dbError?: string | undefined;
 }): Promise<{ sent: boolean }> => {
   const cfg = loadTeknoConfig();
   if (!cfg.discordWebhookUrl) return { sent: false };
+  const fields = [
+    { name: 'Bandcamp', value: String(summary.bandcamp), inline: true },
+    { name: 'SoundCloud', value: String(summary.soundcloud), inline: true },
+    { name: 'New', value: String(summary.inserted), inline: true },
+    { name: 'Skipped (dupes)', value: String(summary.skipped), inline: true },
+  ];
+  if (summary.dbError) {
+    fields.push({ name: 'Persistence', value: `skipped — ${summary.dbError}`, inline: false });
+  }
   const payload = {
     embeds: [
       {
         title: 'Music release scan complete',
-        color: 3066993,
-        fields: [
-          { name: 'Bandcamp', value: String(summary.bandcamp), inline: true },
-          { name: 'SoundCloud', value: String(summary.soundcloud), inline: true },
-          { name: 'New', value: String(summary.inserted), inline: true },
-          { name: 'Skipped (dupes)', value: String(summary.skipped), inline: true },
-        ],
+        color: summary.dbError ? 15158332 : 3066993,
+        fields,
       },
     ],
   };
